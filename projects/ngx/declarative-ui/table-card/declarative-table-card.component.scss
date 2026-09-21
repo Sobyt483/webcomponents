@@ -3,6 +3,8 @@
 }
 
 .card {
+  --mfp_tableCardBarHeight: 3.75rem;
+
   display: flex;
   flex-direction: column;
   border: 1px solid var(--sapGroup_ContentBorderColor, #d9d9d9);
@@ -13,7 +15,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    min-height: 3rem;
+    min-height: var(--mfp_tableCardBarHeight);
     padding: 0 1rem;
   }
 
