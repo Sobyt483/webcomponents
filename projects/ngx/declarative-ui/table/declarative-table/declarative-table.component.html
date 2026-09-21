@@ -30,9 +30,12 @@
       [name]="errorIllustration()"
     >
       @if (error.title) {
-        <ui5-title data-testid="error-view-title" level="H1" slot="title">{{
-          error.title
-        }}</ui5-title>
+        <ui5-title
+          data-testid="generic-table-error-title"
+          level="H1"
+          slot="title"
+          >{{ error.title }}</ui5-title
+        >
       }
       @if (error.message) {
         <div slot="subtitle">
