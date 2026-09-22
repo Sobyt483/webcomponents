@@ -28,7 +28,7 @@
     "npm": ">=10.0.0"
   },
   "dependencies": {
-    "gridstack": "13.2.0",
+    "gridstack": "13.3.0",
     "tslib": "2.8.1"
   },
   "peerDependencies": {
@@ -59,7 +59,7 @@
     "@storybook/addon-docs": "10.6.0",
     "@storybook/addon-links": "10.6.0",
     "@storybook/angular": "10.6.0",
-    "@types/node": "24.13.3",
+    "@types/node": "24.13.4",
     "@vitest/coverage-v8": "4.1.11",
     "concurrently": "10.0.5",
     "eslint": "10.10.0",
