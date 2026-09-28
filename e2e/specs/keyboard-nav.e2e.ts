@@ -88,8 +88,7 @@ test.describe('Keyboard navigation', () => {
   }) => {
     await enterEditMode(page);
 
-    // Read the live DOM order first — initial order is non-deterministic, so we
-    // work relative to positions, not hardcoded ids.
+    // Resolve live DOM order; work relative to positions.
     const orderBefore = await orderByDom(page);
     const front = orderBefore[0];
     const second = orderBefore[1];
@@ -129,7 +128,7 @@ test.describe('Keyboard navigation', () => {
   }) => {
     await enterEditMode(page);
 
-    // With 5 cards (widths 1+2+2+1+1=7) packed into 4 cols, row 0 holds
+    // With 7 cards (widths 1+2+2+1+1+1+1) packed into 4 cols, row 0 holds
     // some subset. Read the live row-0 cards, then move the front to the end.
     const orderBefore = await orderByDom(page);
     const front = orderBefore[0];
@@ -176,6 +175,62 @@ test.describe('Keyboard navigation', () => {
       const slotAfter = await slotOf(page, front);
       expect(slotAfter.x).toBeGreaterThan(0);
     }
+  });
+
+  test('Control+End: assert EXACT row-0 sequence after moving front to row-end', async ({
+    page,
+  }) => {
+    await enterEditMode(page);
+
+    // With 7 cards the deterministic z-flow layout is:
+    //   Row 0 (gs-y=0):  a(x=0,w=1), b(x=1,w=2)
+    //   Row 1 (gs-y=40): c(x=0,w=2), d(x=2,w=1), e(x=3,w=1)
+    //   Row 2 (gs-y=80): g(x=0,w=1), h(x=1,w=1)
+    // Resolve positions from live DOM.
+    const orderBefore = await orderByDom(page);
+    const front = orderBefore[0]; // card at zFlowOrder[0]
+
+    // Read the row-0 cards sorted by gs-x before the move.
+    const row0Before = await page.evaluate(() =>
+      Array.from(
+        document.querySelectorAll<HTMLElement>('.grid-stack-item[gs-id]'),
+      )
+        .filter((el) => parseInt(el.getAttribute('gs-y') ?? '99', 10) === 0)
+        .sort(
+          (a, b) =>
+            parseInt(a.getAttribute('gs-x') ?? '0', 10) -
+            parseInt(b.getAttribute('gs-x') ?? '0', 10),
+        )
+        .map((el) => el.getAttribute('gs-id')!),
+    );
+
+    // Ctrl+End moves the front card to the last position within row 0. The
+    // resulting row-0 sequence should have all the former row-0 members minus
+    // the front, appended with the front at the end.
+    const expectedRow0After = [...row0Before.filter((id) => id !== front), front];
+
+    await pressCommand(page, front, 'Control+End');
+
+    // Poll for row-0 to stabilise in the expected order.
+    await expect
+      .poll(async () => {
+        const row0After = await page.evaluate(() =>
+          Array.from(
+            document.querySelectorAll<HTMLElement>('.grid-stack-item[gs-id]'),
+          )
+            .filter(
+              (el) => parseInt(el.getAttribute('gs-y') ?? '99', 10) === 0,
+            )
+            .sort(
+              (a, b) =>
+                parseInt(a.getAttribute('gs-x') ?? '0', 10) -
+                parseInt(b.getAttribute('gs-x') ?? '0', 10),
+            )
+            .map((el) => el.getAttribute('gs-id')!),
+        );
+        return JSON.stringify(row0After) === JSON.stringify(expectedRow0After);
+      })
+      .toBe(true);
   });
 
   test('Control+Home on a row-start card is a no-op (order unchanged)', async ({
@@ -235,6 +290,42 @@ test.describe('Keyboard navigation', () => {
     expect(orderAfter[0]).not.toBe(front);
   });
 
+  test('Control+ArrowDown on front card: assert EXACT resulting orderByDom', async ({
+    page,
+  }) => {
+    await enterEditMode(page);
+
+    // With the deterministic 7-card layout, Ctrl+Down on the front card (a at
+    // x=0,y=0) moves a downward in zFlowOrder until it becomes the first card
+    // of the next logical row. Concretely, the cards that fill row 0 reflow
+    // into row 0 completely, then a lands as the first card of row 1 at x=0.
+    //
+    // With initial order [a(w=1), b(w=2), c(w=2), d(w=1), e(w=1), g(w=1), h(w=1)]:
+    //   After Ctrl+Down on a the order becomes [b, c, a, d, e, g, h] because:
+    //   - b(w=2) + c(w=2) fill row 0 exactly (4 cols).
+    //   - a(w=1) wraps to row 1 x=0, followed by d, e, g.
+    //   - h wraps to row 2 x=0.
+    const orderBefore = await orderByDom(page);
+    const front = orderBefore[0]; // a
+
+    await pressCommand(page, front, 'Control+ArrowDown');
+
+    // Expected order: b fills first, then c fills row 0, then a starts row 1.
+    const expectedOrder = [
+      orderBefore[1], // b: x=0, y=0
+      orderBefore[2], // c: x=2, y=0
+      front,          // a: x=0, y=40
+      orderBefore[3], // d: x=1, y=40
+      orderBefore[4], // e: x=2, y=40
+      orderBefore[5], // g: x=3, y=40
+      orderBefore[6], // h: x=0, y=80
+    ];
+
+    await expect
+      .poll(() => orderByDom(page))
+      .toEqual(expectedOrder);
+  });
+
   test('Control+ArrowUp on a row-0 card is a no-op (order unchanged)', async ({
     page,
   }) => {
@@ -253,6 +344,450 @@ test.describe('Keyboard navigation', () => {
     const slotAfter = await slotOf(page, front);
     expect(slotAfter.x).toBe(slotBefore.x);
     expect(slotAfter.y).toBe(slotBefore.y);
+  });
+
+  test('Control+ArrowLeft on a row-start card (x:0) is a no-op (order unchanged)', async ({
+    page,
+  }) => {
+    await enterEditMode(page);
+
+    // Find a card at x:0 in its row. The front card always starts at x:0.
+    const orderBefore = await orderByDom(page);
+    const front = orderBefore[0];
+    const slotBefore = await slotOf(page, front);
+    expect(slotBefore.x).toBe(0);
+
+    // Ctrl+Left on a row-start card — no card to its left, so no-op.
+    await pressCommand(page, front, 'Control+ArrowLeft');
+
+    await expect.poll(() => orderByDom(page)).toEqual(orderBefore);
+    const slotAfter = await slotOf(page, front);
+    expect(slotAfter.x).toBe(slotBefore.x);
+    expect(slotAfter.y).toBe(slotBefore.y);
+  });
+
+  test('Control+ArrowRight on a row-end card is a no-op (order unchanged)', async ({
+    page,
+  }) => {
+    await enterEditMode(page);
+
+    // Find the rightmost card in any row (max gs-x in its row). In the
+    // deterministic layout, b at x=1 is the last in row 0 (it spans cols 1-2),
+    // e at x=3 is the last in row 1. We find any row-end card dynamically.
+    const orderBefore = await orderByDom(page);
+
+    // Build a map from gs-y to max gs-x card id.
+    const rowEndCard = await page.evaluate(() => {
+      const items = Array.from(
+        document.querySelectorAll<HTMLElement>('.grid-stack-item[gs-id]'),
+      );
+      const byRow = new Map<number, { id: string; x: number }>();
+      for (const el of items) {
+        const y = parseInt(el.getAttribute('gs-y') ?? '0', 10);
+        const x = parseInt(el.getAttribute('gs-x') ?? '0', 10);
+        const id = el.getAttribute('gs-id')!;
+        const cur = byRow.get(y);
+        if (!cur || x > cur.x) byRow.set(y, { id, x });
+      }
+      // Return the row-end card from the first row (row 0).
+      return byRow.get(0)?.id ?? null;
+    });
+    if (!rowEndCard) throw new Error('Could not find a row-end card');
+
+    const slotBefore = await slotOf(page, rowEndCard);
+
+    // Ctrl+Right on a row-end card — no card to its right in the same row,
+    // so the move is a genuine no-op.
+    await pressCommand(page, rowEndCard, 'Control+ArrowRight');
+
+    await expect.poll(() => orderByDom(page)).toEqual(orderBefore);
+    const slotAfter = await slotOf(page, rowEndCard);
+    expect(slotAfter.x).toBe(slotBefore.x);
+    expect(slotAfter.y).toBe(slotBefore.y);
+  });
+
+  test('Control+ArrowDown on a last-row card is a no-op (order unchanged)', async ({
+    page,
+  }) => {
+    await enterEditMode(page);
+
+    // Find a card in the last row (max gs-y). In the deterministic layout,
+    // g and h are in row 2 (gs-y=80).
+    const orderBefore = await orderByDom(page);
+
+    const lastRowCard = await page.evaluate(() => {
+      const items = Array.from(
+        document.querySelectorAll<HTMLElement>('.grid-stack-item[gs-id]'),
+      );
+      let maxY = -1;
+      let maxCard: string | null = null;
+      for (const el of items) {
+        const y = parseInt(el.getAttribute('gs-y') ?? '0', 10);
+        if (y > maxY) {
+          maxY = y;
+          maxCard = el.getAttribute('gs-id');
+        }
+      }
+      return maxCard;
+    });
+    if (!lastRowCard) throw new Error('Could not find a last-row card');
+
+    const slotBefore = await slotOf(page, lastRowCard);
+
+    // Ctrl+Down on a card in the last row — no row below, so it is a no-op.
+    await pressCommand(page, lastRowCard, 'Control+ArrowDown');
+
+    await expect.poll(() => orderByDom(page)).toEqual(orderBefore);
+    const slotAfter = await slotOf(page, lastRowCard);
+    expect(slotAfter.x).toBe(slotBefore.x);
+    expect(slotAfter.y).toBe(slotBefore.y);
+  });
+
+  test('Control+End on a card already last in its row is a no-op (order unchanged)', async ({
+    page,
+  }) => {
+    await enterEditMode(page);
+
+    // Find the row-end card — the card with the highest gs-x in any row.
+    // We use row 1 (gs-y=40) to vary the target from the Ctrl+Right no-op
+    // test above (which used row 0). In the deterministic layout, e is last
+    // in row 1 at x=3. Find it dynamically.
+    const orderBefore = await orderByDom(page);
+
+    const rowEndCard = await page.evaluate(() => {
+      const items = Array.from(
+        document.querySelectorAll<HTMLElement>('.grid-stack-item[gs-id]'),
+      );
+      const byRow = new Map<number, { id: string; x: number }>();
+      for (const el of items) {
+        const y = parseInt(el.getAttribute('gs-y') ?? '0', 10);
+        const x = parseInt(el.getAttribute('gs-x') ?? '0', 10);
+        const id = el.getAttribute('gs-id')!;
+        const cur = byRow.get(y);
+        if (!cur || x > cur.x) byRow.set(y, { id, x });
+      }
+      // Use row 1 (gs-y=40) for variety; fall back to row 0 if absent.
+      const row1End = byRow.get(40);
+      return row1End?.id ?? byRow.get(0)?.id ?? null;
+    });
+    if (!rowEndCard) throw new Error('Could not find a row-end card');
+
+    const slotBefore = await slotOf(page, rowEndCard);
+
+    // Ctrl+End on a card already at the row's end — it is already the rightmost,
+    // so no reorder occurs.
+    await pressCommand(page, rowEndCard, 'Control+End');
+
+    await expect.poll(() => orderByDom(page)).toEqual(orderBefore);
+    const slotAfter = await slotOf(page, rowEndCard);
+    expect(slotAfter.x).toBe(slotBefore.x);
+    expect(slotAfter.y).toBe(slotBefore.y);
+  });
+
+  test('Productive Control+ArrowUp: a row-1 card moves to row 0 and full order updates', async ({
+    page,
+  }) => {
+    await enterEditMode(page);
+
+    // With 7 cards the z-flow layout guarantees cards in row 1 (gs-y=40):
+    // c(x=0,w=2), d(x=2,w=1), e(x=3,w=1). Find any card NOT in row 0 from the
+    // live layout to remain non-determinism-safe.
+    const orderBefore = await orderByDom(page);
+    const cardInRow1 = await (async () => {
+      for (const id of orderBefore) {
+        const slot = await slotOf(page, id);
+        if (slot.y > 0) return id;
+      }
+      throw new Error('No card in row > 0 found — dataset too small');
+    })();
+
+    const slotBefore = await slotOf(page, cardInRow1);
+    expect(slotBefore.y).toBeGreaterThan(0);
+
+    // Press Ctrl+Up: should move the card to the previous row.
+    await pressCommand(page, cardInRow1, 'Control+ArrowUp');
+
+    // The card must now be at a lower gs-y (moved up to an earlier row).
+    await expect
+      .poll(async () => {
+        const s = await slotOf(page, cardInRow1);
+        return s.y < slotBefore.y;
+      })
+      .toBe(true);
+
+    // The overall order must have changed (the moved card is earlier in the sequence).
+    const orderAfter = await orderByDom(page);
+    const idxBefore = orderBefore.indexOf(cardInRow1);
+    const idxAfter = orderAfter.indexOf(cardInRow1);
+    expect(idxAfter).toBeLessThan(idxBefore);
+
+    // All cards must still be present.
+    expect(orderAfter).toHaveLength(orderBefore.length);
+    for (const id of orderBefore) {
+      expect(orderAfter).toContain(id);
+    }
+  });
+
+  test('Productive Control+ArrowUp on row-1 card: assert EXACT resulting orderByDom', async ({
+    page,
+  }) => {
+    await enterEditMode(page);
+
+    const orderBefore = await orderByDom(page);
+    const cardInRow1 = await (async () => {
+      for (const id of orderBefore) {
+        const slot = await slotOf(page, id);
+        if (slot.y > 0) return id;
+      }
+      throw new Error('No card in row > 0 found — dataset too small');
+    })();
+
+    const idxBefore = orderBefore.indexOf(cardInRow1);
+    const slotOfCardInRow1 = await slotOf(page, cardInRow1);
+
+    // Find the index of the first card in the previous row (the row with the
+    // largest y still less than cardInRow1's y). Ctrl+Up inserts cardInRow1
+    // just before that first card of the previous row.
+    const prevRowY = await page.evaluate(
+      ({ currentY }: { currentY: number }) => {
+        const items = Array.from(
+          document.querySelectorAll<HTMLElement>('.grid-stack-item[gs-id]'),
+        );
+        const ys = items
+          .map((el) => parseInt(el.getAttribute('gs-y') ?? '0', 10))
+          .filter((y) => y < currentY);
+        return ys.length ? Math.max(...ys) : -1;
+      },
+      { currentY: slotOfCardInRow1.y },
+    );
+    if (prevRowY < 0) throw new Error('No previous row found');
+
+    // The first card of the previous row in zFlowOrder is the card in orderBefore
+    // with the smallest index among those in the previous row.
+    const prevRowFirstIdx = (await Promise.all(
+      orderBefore.map(async (id, i) => {
+        const s = await slotOf(page, id);
+        return s.y === prevRowY ? i : Infinity;
+      }),
+    )).reduce((min, i) => Math.min(min, i), Infinity);
+
+    // Ctrl+Up moves cardInRow1 to the start of the previous row (before prevRowFirstIdx).
+    const expectedOrder = [
+      ...orderBefore.slice(0, prevRowFirstIdx),
+      cardInRow1,
+      ...orderBefore.slice(prevRowFirstIdx, idxBefore),
+      ...orderBefore.slice(idxBefore + 1),
+    ];
+
+    await pressCommand(page, cardInRow1, 'Control+ArrowUp');
+
+    await expect
+      .poll(() => orderByDom(page))
+      .toEqual(expectedOrder);
+  });
+
+  test('Productive Control+ArrowLeft on mid-row card: assert EXACT resulting orderByDom', async ({
+    page,
+  }) => {
+    await enterEditMode(page);
+
+    // Find the first card in orderBefore that is NOT at x:0 in its row.
+    // In the deterministic layout, b (orderBefore[1]) is at x=1 in row 0.
+    const orderBefore = await orderByDom(page);
+    const midRowCard = await (async () => {
+      for (const id of orderBefore) {
+        const slot = await slotOf(page, id);
+        if (slot.x > 0) return id;
+      }
+      throw new Error('No mid-row card found — all cards at x:0');
+    })();
+
+    const idxBefore = orderBefore.indexOf(midRowCard);
+    // Ctrl+Left swaps midRowCard with the card immediately before it in zFlowOrder.
+    // Expected order: the card at (idxBefore - 1) and midRowCard are swapped.
+    const expectedOrder = [
+      ...orderBefore.slice(0, idxBefore - 1),
+      midRowCard,
+      orderBefore[idxBefore - 1],
+      ...orderBefore.slice(idxBefore + 1),
+    ];
+
+    await pressCommand(page, midRowCard, 'Control+ArrowLeft');
+
+    await expect
+      .poll(() => orderByDom(page))
+      .toEqual(expectedOrder);
+  });
+
+  test('Control+ArrowUp nearest-by-x: d at Row1 x=2 lands in Row0 at x=3, not row-start', async ({
+    page,
+  }) => {
+    await enterEditMode(page);
+
+    // Deterministic layout:
+    //   Row 0 (gs-y=0):  a(x=0,w=1), b(x=1,w=2)
+    //   Row 1 (gs-y=40): c(x=0,w=2), d(x=2,w=1), e(x=3,w=1)
+    //   Row 2 (gs-y=80): g(x=0,w=1), h(x=1,w=1)
+    //
+    // d is orderBefore[3] — source.x=2, source.row=1.
+    // Ctrl+Up candidates in Row 0 (slot0→x=0, slot1→x=1, slot2→x=3):
+    //   distance |projected.x - source.x=2|:
+    //     slot0: |0-2|=2, slot1: |1-2|=1, slot2: |3-2|=1
+    //   Tie between slot1 and slot2: secondary = |slot - d_original_index=3|
+    //     slot1: |1-3|=2, slot2: |2-3|=1 → slot2 wins.
+    // Result order: [a, b, d, c, e, g, h], d lands at x=3, y=0.
+    const orderBefore = await orderByDom(page);
+    const dId = orderBefore[3]; // d is 4th in zFlowOrder (0-based index 3)
+    const startSlot = await slotOf(page, dId);
+
+    // Precondition: d must be at x=2 (above row-start) to exercise the nearest-by-x rule.
+    expect(startSlot.y).toBe(40); // Row 1
+    expect(startSlot.x).toBe(2);  // x>0 — this is the crux
+
+    await pressCommand(page, dId, 'Control+ArrowUp');
+
+    const landedSlot = await (async () => {
+      await expect
+        .poll(async () => {
+          const s = await slotOf(page, dId);
+          return s.y < startSlot.y;
+        })
+        .toBe(true);
+      return slotOf(page, dId);
+    })();
+
+    // d must have moved UP (into Row 0).
+    expect(landedSlot.y).toBeLessThan(startSlot.y);
+    // d must NOT collapse to row-start — nearest-by-x lands it at x=3, not x=0.
+    // An "always insert at row-start" regression makes x===0 and fails here.
+    expect(landedSlot.x).not.toBe(0);
+
+    // Exact order: slot2 selected → [a, b, d, c, e, g, h]
+    // Pack: a(x=0,r0), b(x=1,r0), d(x=3,r0), c(x=0,r1), e(x=2,r1), g(x=3,r1), h(x=0,r2)
+    // orderByDom: Row0→[a,b,d], Row1→[c,e,g], Row2→[h] = [a,b,d,c,e,g,h]
+    const expectedOrder = [
+      orderBefore[0], // a: x=0, y=0
+      orderBefore[1], // b: x=1, y=0
+      dId,            // d: x=3, y=0 (nearest to source.x=2 via tie-break on slot closeness)
+      orderBefore[2], // c: x=0, y=40
+      orderBefore[4], // e: x=2, y=40
+      orderBefore[5], // g: x=3, y=40
+      orderBefore[6], // h: x=0, y=80
+    ];
+
+    await expect
+      .poll(() => orderByDom(page))
+      .toEqual(expectedOrder);
+  });
+
+  test('Control+ArrowDown nearest-by-x: b at Row0 x=1 lands in Row1 at x=1, not row-start', async ({
+    page,
+  }) => {
+    await enterEditMode(page);
+
+    // b is orderBefore[1] — source.x=1, source.row=0.
+    // Ctrl+Down candidates in Row 1 (slots 2–5 → projected.x = 0,0,1,2):
+    //   distance |projected.x - source.x=1|:
+    //     slot2: |0-1|=1, slot3: |0-1|=1, slot4: |1-1|=0, slot5: |2-1|=1
+    //   slot4 wins with distance=0.
+    // Result order: [a, c, d, e, b, g, h], b lands at x=1, y=40.
+    const orderBefore = await orderByDom(page);
+    const bId = orderBefore[1]; // b is 2nd in zFlowOrder
+    const startSlot = await slotOf(page, bId);
+
+    // Precondition: b must be at x=1 (above row-start) to exercise nearest-by-x.
+    expect(startSlot.y).toBe(0);  // Row 0
+    expect(startSlot.x).toBe(1);  // x>0 — this is the crux
+
+    await pressCommand(page, bId, 'Control+ArrowDown');
+
+    const landedSlot = await (async () => {
+      await expect
+        .poll(async () => {
+          const s = await slotOf(page, bId);
+          return s.y > startSlot.y;
+        })
+        .toBe(true);
+      return slotOf(page, bId);
+    })();
+
+    // b must have moved DOWN (into Row 1).
+    expect(landedSlot.y).toBeGreaterThan(startSlot.y);
+    // b must NOT collapse to row-start — nearest-by-x lands it at x=1, not x=0.
+    // An "always insert at row-start" regression makes x===0 and fails here.
+    expect(landedSlot.x).not.toBe(0);
+
+    // Exact order: slot4 selected → [a, c, d, e, b, g, h]
+    // Pack: a(x=0,r0), c(x=1,r0), d(x=3,r0), e(x=0,r1), b(x=1,r1), g(x=3,r1), h(x=0,r2)
+    // orderByDom: Row0→[a,c,d], Row1→[e,b,g], Row2→[h] = [a,c,d,e,b,g,h]
+    const expectedOrder = [
+      orderBefore[0], // a: x=0, y=0
+      orderBefore[2], // c: x=1, y=0
+      orderBefore[3], // d: x=3, y=0
+      orderBefore[4], // e: x=0, y=40
+      bId,            // b: x=1, y=40 (nearest to source.x=1, exact match)
+      orderBefore[5], // g: x=3, y=40
+      orderBefore[6], // h: x=0, y=80
+    ];
+
+    await expect
+      .poll(() => orderByDom(page))
+      .toEqual(expectedOrder);
+  });
+
+  test('Productive Control+Home: a mid-row card moves to row-start and full row order updates', async ({
+    page,
+  }) => {
+    await enterEditMode(page);
+
+    // Find a card that is NOT at x:0 in its row. With 7 cards, row 0 has cards
+    // a(x=0) and b(x=1), so b is a deterministic mid-row candidate. We resolve
+    // it dynamically to stay non-determinism-safe.
+    const orderBefore = await orderByDom(page);
+    const midRowCard = await (async () => {
+      for (const id of orderBefore) {
+        const slot = await slotOf(page, id);
+        if (slot.x > 0) return id;
+      }
+      throw new Error('No mid-row card found — all cards at x:0');
+    })();
+
+    const slotBefore = await slotOf(page, midRowCard);
+    expect(slotBefore.x).toBeGreaterThan(0);
+    const cardRow = slotBefore.y;
+
+    // Press Ctrl+Home: should move the card to x:0 in its row.
+    await pressCommand(page, midRowCard, 'Control+Home');
+
+    // The card must now be at x:0 in the same row.
+    await expect
+      .poll(async () => {
+        const s = await slotOf(page, midRowCard);
+        return s.x === 0 && s.y === cardRow;
+      })
+      .toBe(true);
+
+    // The cards that were previously before midRowCard in that row must have
+    // shifted right. Confirm via full row order: midRowCard must be first in its row.
+    const rowCardsAfter = await page.evaluate(
+      ({ row }: { row: number }) =>
+        Array.from(
+          document.querySelectorAll<HTMLElement>('.grid-stack-item[gs-id]'),
+        )
+          .filter((el) => parseInt(el.getAttribute('gs-y') ?? '99', 10) === row)
+          .sort(
+            (a, b) =>
+              parseInt(a.getAttribute('gs-x') ?? '0', 10) -
+              parseInt(b.getAttribute('gs-x') ?? '0', 10),
+          )
+          .map((el) => el.getAttribute('gs-id')!),
+      { row: cardRow },
+    );
+    expect(rowCardsAfter[0]).toBe(midRowCard);
+
+    // All cards must still be present.
+    const orderAfter = await orderByDom(page);
+    expect(orderAfter).toHaveLength(orderBefore.length);
   });
 
   test('two-modifier no-op: Control+Shift+ArrowRight does not change width', async ({

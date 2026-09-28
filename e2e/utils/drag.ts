@@ -1,17 +1,9 @@
 import { expect, type Page } from '@playwright/test';
-import { gridBox, slotOf } from './grid';
+import { CELL_HEIGHT, gridBox, slotOf } from './grid';
 
 // Re-export for consumers that previously imported these from here.
 export { getWidth } from './grid';
 export { getHeight } from './grid';
-
-/**
- * z-flow grid cell height in px. gs-y is expressed in grid-row units and the
- * grid's cellHeight (CELL_HEIGHT) is 10px, so a card at gs-y=R sits R*10 px down.
- * (Loose cards are h:40 rows tall = 400px, but that is the card SIZE, not the
- * row-to-pixel pitch — the pitch is one cell = 10px.)
- */
-const ROW_HEIGHT_PX = 10;
 
 /**
  * Drag a card to a target grid column and row using simulated mouse events.
@@ -22,7 +14,8 @@ const ROW_HEIGHT_PX = 10;
  * Assumptions:
  *   - The page is already in edit mode before this is called.
  *   - targetCol is 0-based (left column = 0).
- *   - targetRow is 0-based (top row = 0).
+ *   - targetRow is the raw gs-y cell value (Row 0 = 0, Row 1 = 40, Row 2 = 80
+ *     for h:40 loose cards). Pixel position is derived via CELL_HEIGHT.
  */
 export async function dragCardToSlot(
   page: Page,
@@ -33,27 +26,41 @@ export async function dragCardToSlot(
   // Guard: edit mode must be active.
   await expect(page.locator('.mfp-dashboard.edit')).toBeVisible();
 
-  const box = await gridBox(page);
-
-  // Source: center of the draggable inner content element.
+  // Scroll the source card into view and measure its position. We scroll
+  // BEFORE reading srcBox so boundingBox() returns valid viewport coordinates.
   const dragHandle = page.locator(
     `.grid-stack-item[gs-id="${id}"] .grid-stack-item-content`,
   );
+  await dragHandle.scrollIntoViewIfNeeded();
   const srcBox = await dragHandle.boundingBox();
   if (!srcBox) throw new Error(`Drag handle for card ${id} not found`);
 
   const srcX = srcBox.x + srcBox.width / 2;
   const srcY = srcBox.y + srcBox.height / 2;
 
-  // Target: center of the destination column / row cell.
+  // Read the source card's gs-y (row in grid-row/cell units) AFTER scroll.
+  const srcSlot = await slotOf(page, id);
+
+  // Compute destination Y relative to srcY: the row difference in cell units
+  // times CELL_HEIGHT (10px/cell) gives the pixel offset between row origins.
+  // z-flow loose cards are h:40 rows each, so one logical row = 400px of
+  // vertical pitch. The destination center is at the same relative height
+  // within the target row as the source center is within its row.
+  const rowDeltaPx = (targetRow - srcSlot.y) * CELL_HEIGHT;
+  const dstY = srcY + rowDeltaPx;
+
+  // For the horizontal target, the column center is stable under vertical
+  // scroll: box.x and colWidth do not change when the page scrolls vertically.
+  const box = await gridBox(page);
   const dstX = box.x + targetCol * box.colWidth + box.colWidth / 2;
-  const dstY = box.y + targetRow * ROW_HEIGHT_PX + ROW_HEIGHT_PX / 2;
 
   await page.mouse.move(srcX, srcY);
   await page.mouse.down();
+  // Small arming nudge so gridstack's drag threshold fires before the main sweep.
+  await page.mouse.move(srcX + 5, srcY + Math.sign(dstY - srcY) * 5, { steps: 3 });
 
   // Move in multiple hops so drag events fire along the path.
-  const steps = 8;
+  const steps = 20;
   for (let i = 1; i <= steps; i++) {
     const t = i / steps;
     await page.mouse.move(srcX + (dstX - srcX) * t, srcY + (dstY - srcY) * t, {
@@ -61,8 +68,8 @@ export async function dragCardToSlot(
     });
   }
 
-  // Poll until the grid attributes reflect the new position. expect.poll has
-  // no `.toSatisfy`, so poll the predicate's boolean result.
+  // Poll until the grid attributes reflect the new position. We poll BEFORE
+  // mouse.up so gridstack has committed the drop before we release.
   await expect
     .poll(async () => {
       const slot = await slotOf(page, id);
@@ -97,7 +104,11 @@ export async function resizeCardByStep(
     }, id);
 
   // Perform a single physical SE-handle drag toward `targetW` columns.
-  const doDrag = async (): Promise<void> => {
+  // Returns true when the gesture successfully armed (`.ui-resizable-resizing`
+  // class appeared on the card after the arming nudge), false when it never
+  // armed (flake — handle not grabbed). Callers use this to distinguish a
+  // genuine clamp (armed but no width change) from a flake (never armed).
+  const doDrag = async (): Promise<boolean> => {
     const box = await gridBox(page);
 
     // Current position/size drives an ABSOLUTE target column edge rather than a
@@ -146,31 +157,54 @@ export async function resizeCardByStep(
     // never clears that threshold. A slightly larger DIAGONAL arming nudge
     // reliably starts the resize before the main horizontal sweep.
     await page.mouse.move(srcX + 6, srcY + 2, { steps: 3 });
-    // Many small hops give gridstack's resize tracker enough mousemove events to
-    // follow the path before the pointer releases.
-    await page.mouse.move(dstX, srcY, { steps: 25 });
+
+    // Confirm the gesture armed: poll for `.ui-resizable-resizing` on the card.
+    // This class is added by gridstack when the resize starts and removed on
+    // mouse.up. If it never appears within the short timeout the gesture flaked.
+    const armed = await page
+      .locator(`.grid-stack-item[gs-id="${id}"].ui-resizable-resizing`)
+      .waitFor({ state: 'attached', timeout: 500 })
+      .then(() => true)
+      .catch(() => false);
+
+    if (armed) {
+      // Many small hops give gridstack's resize tracker enough mousemove events to
+      // follow the path before the pointer releases.
+      await page.mouse.move(dstX, srcY, { steps: 25 });
+    }
     await page.mouse.up();
+    return armed;
   };
 
   // The first resize gesture after edit-mode-enter intermittently no-ops
   // because gridstack's resizable has not finished arming, leaving the width
   // unchanged. Re-attempt the IDENTICAL gesture (up to 3 times) while polling
-  // for the width to change after each attempt. This does NOT force any
-  // particular width — a genuine clamp (already at cap / blocked by minW-maxW)
-  // legitimately leaves the width unchanged and exhausts retries, returning the
-  // true value; the caller's assertion still governs correctness.
+  // for the width to change after each attempt.
+  //
+  // Retry gate: doDrag returns true when `.ui-resizable-resizing` appeared on
+  // the card during the arming nudge (gesture armed), false when it never
+  // appeared (flake). Only if the gesture armed AND the width did not change is
+  // it a genuine clamp — stop retrying and return the unchanged width. If the
+  // gesture never armed, that is a flake → retry the full gesture. This makes a
+  // real resize→no-op regression distinguishable from an arming flake: a genuine
+  // clamp arms but doesn't move the width; a flake never arms at all. The
+  // caller's assertion still governs correctness in both cases.
   const widthBefore = await readWidth();
   let widthAfter = widthBefore;
   for (let attempt = 0; attempt < 3; attempt++) {
-    await doDrag();
-    // Poll for the width to settle after mouse release. The original waitForTimeout
-    // was fragile; polling directly on --gs-w detects both immediate and delayed
-    // commits from the gridstack resize engine.
+    const armed = await doDrag();
+    // Poll for the width to settle after mouse release.
     await expect
       .poll(() => readWidth(), { timeout: 2000 })
       .not.toBe(undefined); // just ensures we can read it — a no-op poll
     widthAfter = await readWidth();
     if (widthAfter !== widthBefore) break;
+
+    if (armed) {
+      // Gesture armed but width didn't change — genuine clamp. Stop retrying.
+      break;
+    }
+    // Gesture never armed — flake. Retry.
   }
 
   return widthAfter;

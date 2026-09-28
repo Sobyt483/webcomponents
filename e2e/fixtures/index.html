@@ -50,7 +50,15 @@
         //   e2e-d  w1 maxW2 minW1  -> grows to 2, capped at own maxW 2 (untouched
         //                             by the swap — the real per-card maxW test)
         //   e2e-e  w1 maxW4 minW1  -> move / reorder target
+        //   e2e-g  w1 maxW4 minW1  -> plain card, ensures ≥2 rows in layout
+        //   e2e-h  w1 maxW4 minW1  -> plain card, ensures ≥3 rows in layout
         //   e2e-f  w1 maxW4 minW1  -> availableCards ONLY -> add flow
+        //   e2e-i  w1 maxW4 minW1  -> availableCards ONLY -> multi-add flow
+        //
+        // z-flow layout with 7 cards (widths 1+2+2+1+1+1+1 = 9):
+        //   Row 0 (gs-y=0):  a(x=0,w=1), b(x=1,w=2)
+        //   Row 1 (gs-y=40): c(x=0,w=2), d(x=2,w=1), e(x=3,w=1)
+        //   Row 2 (gs-y=80): g(x=0,w=1), h(x=1,w=1)
         var H = 40; // z-flow cardHeight (px rows); loose height pinned to this.
 
         function card(id, w, maxW, minW) {
@@ -75,12 +83,15 @@
           card('e2e-c', 2, 4, 2),
           card('e2e-d', 1, 2, 1),
           card('e2e-e', 1, 4, 1),
+          card('e2e-g', 1, 4, 1),
+          card('e2e-h', 1, 4, 1),
         ];
 
         var AVAILABLE_CARDS = CARDS.map(function (c) {
           return Object.assign({}, c);
         });
         AVAILABLE_CARDS.push(card('e2e-f', 1, 4, 1));
+        AVAILABLE_CARDS.push(card('e2e-i', 1, 4, 1));
 
         var el = document.getElementById('dash');
 

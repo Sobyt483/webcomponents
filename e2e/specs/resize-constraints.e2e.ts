@@ -1,28 +1,8 @@
 import { expect, test } from '@playwright/test';
 import { resizeCardByStep } from '../utils/drag';
-import { getHeight, getWidth, slotOf } from '../utils/grid';
+import { getHeight, getRuntimeMaxW, getWidth, slotOf } from '../utils/grid';
 import { openHarness, enterEditMode } from '../utils/harness';
 import { readSaved, resetSaved, saveEdit, savedCard } from '../utils/saved';
-
-/**
- * Helper: read the RUNTIME maxW off a card's gridstack node. This is the value
- * the engine actually enforces during resize — distinct from the maxW passed in
- * via the harness dataset, because changeCardSettingsForXlPage rewrites it at
- * grid init. Reads it from the DOM element's `gridstackNode` back-reference that
- * gridstack attaches to every `.grid-stack-item`.
- */
-async function getRuntimeMaxW(
-  page: import('@playwright/test').Page,
-  id: string,
-): Promise<number | undefined> {
-  return page.evaluate((cardId) => {
-    const el = document.querySelector(
-      `.grid-stack-item[gs-id="${cardId}"]`,
-    ) as (HTMLElement & { gridstackNode?: { maxW?: number } }) | null;
-    if (!el) throw new Error(`Card ${cardId} not found`);
-    return el.gridstackNode?.maxW;
-  }, id);
-}
 
 test.describe('Resize constraints', () => {
   test.beforeEach(async ({ page }) => {

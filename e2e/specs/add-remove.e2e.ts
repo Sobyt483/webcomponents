@@ -69,11 +69,11 @@ test.describe('Add / Remove cards', () => {
     // The former front card is still present but no longer at position 0.
     expect(orderAfter.indexOf(formerFront)).toBeGreaterThan(0);
 
-    // All 6 cards (5 original + e2e-f) must be present in DOM order.
-    expect(orderAfter).toHaveLength(6);
+    // All 8 cards (7 original + e2e-f) must be present in DOM order.
+    expect(orderAfter).toHaveLength(8);
     // e2e-f must be first in the ordered list.
     expect(orderAfter[0]).toBe('e2e-f');
-    // The original 5 cards follow in order behind e2e-f.
+    // The original 7 cards follow in order behind e2e-f.
     for (const id of orderBefore) {
       expect(orderAfter).toContain(id);
     }
@@ -113,9 +113,9 @@ test.describe('Add / Remove cards', () => {
       })
       .toBe(true);
 
-    // orderByDom must now contain exactly the 4 remaining cards (a, c, d, e).
+    // orderByDom must now contain exactly the 6 remaining cards (a, c, d, e, g, h).
     const orderAfter = await orderByDom(page);
-    expect(orderAfter).toHaveLength(4);
+    expect(orderAfter).toHaveLength(6);
     expect(orderAfter).not.toContain('e2e-b');
     // The front card before the remove is either still at index 0, or e2e-b was
     // the front and the next card replaced it. Either way, frontBefore is present
@@ -135,7 +135,105 @@ test.describe('Add / Remove cards', () => {
 
     const cardIds = payload.cards.map((c) => c.id);
     expect(cardIds).not.toContain('e2e-b');
-    // Exactly 4 cards remain in the payload.
-    expect(cardIds).toHaveLength(4);
+    // Exactly 6 cards remain in the payload.
+    expect(cardIds).toHaveLength(6);
+  });
+
+  test('multi-card add: toggle e2e-f and e2e-i, both appear at front in toggle order', async ({
+    page,
+  }) => {
+    await enterEditMode(page);
+
+    // Capture the pre-add order — all 7 CARDS are present.
+    const orderBefore = await orderByDom(page);
+    expect(orderBefore).toHaveLength(7);
+
+    await openEditCardsDialog(page);
+
+    // Both e2e-f and e2e-i are in availableCards only — their switches start OFF.
+    const fChecked = await page.evaluate(() => {
+      const sw = document.querySelector<HTMLElement & { checked?: boolean }>(
+        'ui5-switch[data-testid="dashboard-edit-cards-switch-e2e-f"]',
+      );
+      return Boolean(sw?.checked);
+    });
+    expect(fChecked).toBe(false);
+    const iChecked = await page.evaluate(() => {
+      const sw = document.querySelector<HTMLElement & { checked?: boolean }>(
+        'ui5-switch[data-testid="dashboard-edit-cards-switch-e2e-i"]',
+      );
+      return Boolean(sw?.checked);
+    });
+    expect(iChecked).toBe(false);
+
+    // Toggle both cards ON in order: e2e-f first, then e2e-i.
+    await toggleCard(page, 'e2e-f');
+    await toggleCard(page, 'e2e-i');
+    await saveEditCards(page);
+
+    // Both cards must now be visible.
+    await expect(page.locator('.grid-stack-item[gs-id="e2e-f"]')).toBeVisible();
+    await expect(page.locator('.grid-stack-item[gs-id="e2e-i"]')).toBeVisible();
+
+    // moveNodesToFront adds both at front, preserving their toggle-order batch:
+    // e2e-f was toggled first, e2e-i second → they are prepended [e2e-f, e2e-i]
+    // and the original 7 cards follow. Verify via the live DOM order.
+    const orderAfter = await orderByDom(page);
+    expect(orderAfter).toHaveLength(9); // 7 + 2 new cards
+
+    // Both new cards must occupy the first two slots.
+    expect(orderAfter[0]).toBe('e2e-f');
+    expect(orderAfter[1]).toBe('e2e-i');
+
+    // All original cards must still be present after the two new fronts.
+    for (const id of orderBefore) {
+      expect(orderAfter.indexOf(id)).toBeGreaterThanOrEqual(2);
+    }
+
+    // The two new cards must both be in row 0 (z-flow packs them at x:0 and x:1
+    // since they each have w:1 and fit together in row 0).
+    await expect.poll(() => slotOf(page, 'e2e-f')).toMatchObject({ x: 0, y: 0 });
+    await expect.poll(() => slotOf(page, 'e2e-i')).toMatchObject({ x: 1, y: 0 });
+  });
+
+  test('remove-and-reflow: exact survivor sequence after removing a mid-order card', async ({
+    page,
+  }) => {
+    await enterEditMode(page);
+
+    // Resolve live DOM order; work relative to positions.
+    const orderBefore = await orderByDom(page);
+    expect(orderBefore).toHaveLength(7);
+
+    // Pick e2e-b as the card to remove. It is deterministically NOT the front card
+    // (the front is always the first in zFlowOrder, which is a), so removing b
+    // creates a gap that z-flow must close by repacking.
+    await page.locator('[data-testid="dashboard-card-e2e-b-remove"]').click();
+
+    // Wait for e2e-b to leave the DOM.
+    await expect
+      .poll(() => page.locator('.grid-stack-item[gs-id="e2e-b"]').count())
+      .toBe(0);
+
+    // Wait for packing to settle: front card at y:0.
+    await expect
+      .poll(async () => {
+        const order = await orderByDom(page);
+        if (order.length === 0) return false;
+        const slot = await slotOf(page, order[0]);
+        return slot.y === 0;
+      })
+      .toBe(true);
+
+    // The exact survivor sequence must be orderBefore with e2e-b removed.
+    // orderByDom sorts by gs-y then gs-x, which mirrors zFlowOrder after packing.
+    const orderAfter = await orderByDom(page);
+    const expectedOrder = orderBefore.filter((id) => id !== 'e2e-b');
+    expect(orderAfter).toHaveLength(6);
+    expect(orderAfter).toEqual(expectedOrder);
+
+    // Confirm the first survivor is at y:0 (no empty row gap).
+    const firstSlot = await slotOf(page, orderAfter[0]);
+    expect(firstSlot.y).toBe(0);
   });
 });

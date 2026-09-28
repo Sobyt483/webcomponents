@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { dragCardByRows } from '../utils/drag';
-import { getWidth, gridBox, orderByDom, slotOf } from '../utils/grid';
+import { dragCardByRows, dragCardToSlot } from '../utils/drag';
+import { getWidth, orderByDom, slotOf } from '../utils/grid';
 import { openHarness, enterEditMode } from '../utils/harness';
 import { pressCommand } from '../utils/keyboard';
 import { readSaved, resetSaved, saveEdit, savedCard } from '../utils/saved';
@@ -29,8 +29,6 @@ test.describe('Move / Reorder cards', () => {
       (window as unknown as { __mfpResetDrag: () => void }).__mfpResetDrag(),
     );
 
-    const box = await gridBox(page);
-
     // Pick the LAST card in DOM order as the drag source (bottom of the layout),
     // resolved at runtime rather than hardcoding an id/slot — initial order is
     // non-deterministic between loads.
@@ -41,6 +39,11 @@ test.describe('Move / Reorder cards', () => {
     const dragHandle = page.locator(
       `.grid-stack-item[gs-id="${sourceId}"] .grid-stack-item-content`,
     );
+    // Ensure the source card is within the visible viewport before reading its
+    // bounding box and firing mouse events. With more rows in the dataset, the
+    // last card may be below the fold; scrolling it into view first makes the
+    // drag gesture reliable regardless of layout size.
+    await dragHandle.scrollIntoViewIfNeeded();
     const srcBox = await dragHandle.boundingBox();
     if (!srcBox) throw new Error('Drag handle not found');
 
@@ -79,10 +82,14 @@ test.describe('Move / Reorder cards', () => {
       )
       .toBe(true);
 
-    // Now move to a DIFFERENT slot to trigger a reorder. Aim at the top-left
-    // cell — comfortably a different slot from any starting position.
-    const dstX = box.x + box.colWidth / 2;
-    const dstY = box.y + srcBox.height / 2;
+    // Now move to a DIFFERENT slot to trigger a reorder. Aim one card-height
+    // above the source — that puts the pointer in the row directly above, which
+    // is comfortably within the viewport regardless of how many rows the layout
+    // has. Using a relative offset avoids the negative-coordinate issue that
+    // arises when the destination (e.g., row 0) scrolls off the top of the
+    // viewport after the source card is scrolled into view.
+    const dstX = srcX; // stay in same column, no horizontal move needed
+    const dstY = srcY - srcBox.height; // one card-height up = previous row
 
     // Move in many small steps so gridstack's drag tracker fires intermediate
     // move-checks along the path (required for the z-flow engine to reorder).
@@ -116,19 +123,18 @@ test.describe('Move / Reorder cards', () => {
   }) => {
     await enterEditMode(page);
 
-    // Read live order first — initial DOM order is non-deterministic between
-    // page loads in a shared browser context. Work relative to positions.
+    // Resolve live DOM order; work relative to positions.
     const orderBefore = await orderByDom(page);
     const frontId = orderBefore[0];
     const secondId = orderBefore[1];
+
+    // Confirm front card starts at y:0.
+    expect((await slotOf(page, frontId)).y).toBe(0);
 
     // The norm helper collapses IEEE signed-zero (-0 → 0). The saved payload
     // can carry -0 for x while the DOM attribute parses to +0; `toBe` uses
     // Object.is which treats them as distinct, so we normalise before comparing.
     const norm = (n: number) => (Object.is(n, -0) ? 0 : n);
-
-    // Confirm front card starts at y:0.
-    expect((await slotOf(page, frontId)).y).toBe(0);
 
     // Use dragCardByRows: derives the vertical pitch from the card's own
     // bounding box, so no hard-coded pixel literals.
@@ -167,24 +173,16 @@ test.describe('Move / Reorder cards', () => {
     expect(norm(pSecond.x)).toBe(norm(domSecond.x));
     expect(norm(pSecond.y)).toBe(norm(domSecond.y));
 
-    // Step E: the saved payload's card order (sorted by zFlowOrder / position)
-    // must reproduce the same visual order the DOM shows. A bug that re-sorts
-    // cards[] by zFlowOrder would revert the reorder — this guard catches it.
-    // We reload to verify the persisted order survives a fresh render cycle.
-    // NOTE: the harness does not auto-reload from the saved payload, so we
-    // verify the order is preserved in the payload cards array itself instead.
-    // The cards array position in the saved payload determines re-render order.
+    // A bug that re-sorts cards[] by zFlowOrder would revert the reorder on
+    // save — this guard catches it. The harness does not auto-reload, so we
+    // verify order in the payload cards array directly.
     const savedIds = payload.cards.map((c) => c.id);
-    // Both reordered cards must be present with the post-drag positions.
     const savedFrontCard = payload.cards.find((c) => c.id === frontId);
     const savedSecondCard = payload.cards.find((c) => c.id === secondId);
     expect(savedFrontCard).toBeDefined();
     expect(savedSecondCard).toBeDefined();
-    // The saved x/y for secondId must reflect y:0 (it reflowed to the front).
     expect(norm(savedSecondCard!.y)).toBe(0);
-    // The saved x/y for frontId must reflect a row below y:0.
     expect(norm(savedFrontCard!.y)).toBeGreaterThan(0);
-    // Sanity: both ids are still in the payload.
     expect(savedIds).toContain(frontId);
     expect(savedIds).toContain(secondId);
   });
@@ -230,6 +228,52 @@ test.describe('Move / Reorder cards', () => {
     const secondSlot = await slotOf(page, second);
     expect(secondSlot.x).toBe(0);
     expect(secondSlot.y).toBeGreaterThan(0);
+  });
+
+  test('drag-to-arbitrary-slot: drag d from Row 1 to Row 0 col 1 and assert exact resulting order', async ({
+    page,
+  }) => {
+    await enterEditMode(page);
+
+    // The deterministic z-flow layout with 7 cards is:
+    //   Row 0 (gs-y=0):  a(x=0,w=1), b(x=1,w=2)
+    //   Row 1 (gs-y=40): c(x=0,w=2), d(x=2,w=1), e(x=3,w=1)
+    //   Row 2 (gs-y=80): g(x=0,w=1), h(x=1,w=1)
+    //
+    // We drag d (Row 1) up to col 1 of Row 0, inserting it between a and b.
+    // Row 0 and Row 1 are both within the 900px viewport so no off-screen
+    // issues arise. We resolve card ids from live DOM order to stay robust.
+    const orderBefore = await orderByDom(page);
+
+    // Identify d by its known slot (x=2, y=40) in the deterministic layout.
+    const dId = orderBefore[3]; // d is 4th in zFlowOrder
+    const dSlotBefore = await slotOf(page, dId);
+    // Sanity-check: d should be in Row 1 (gs-y=40), not row 0.
+    expect(dSlotBefore.y).toBe(40);
+    expect(dSlotBefore.x).toBe(2);
+
+    // Drag d to Row 0 (gs-y=0) at col 1 — between a (x=0) and b (x=1,w=2).
+    await dragCardToSlot(page, dId, 1, 0);
+
+    // After inserting d at position 1 in zFlowOrder, the new order is:
+    //   [a, d, b, c, e, g, h]
+    // Z-flow repacks with 4 cols:
+    //   a(w=1,x=0), d(w=1,x=1), b(w=2,x=2): Row 0 (0+1+1+2=4)
+    //   c(w=2,x=0), e(w=1,x=2), g(w=1,x=3): Row 1 (wrap: 4+2>4)
+    //   h(w=1,x=0): Row 2 (wrap: 4+1>4)
+    const expectedOrder = [
+      orderBefore[0], // a: x=0, y=0
+      dId,            // d: x=1, y=0
+      orderBefore[1], // b: x=2, y=0
+      orderBefore[2], // c: x=0, y=40
+      orderBefore[4], // e: x=2, y=40
+      orderBefore[5], // g: x=3, y=40
+      orderBefore[6], // h: x=0, y=80
+    ];
+
+    await expect
+      .poll(() => orderByDom(page))
+      .toEqual(expectedOrder);
   });
 
 });

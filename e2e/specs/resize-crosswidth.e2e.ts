@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { resizeCardByStep } from '../utils/drag';
-import { getWidth } from '../utils/grid';
+import { getRuntimeMaxW, getWidth } from '../utils/grid';
 import { openHarness, enterEditMode } from '../utils/harness';
 import { pressCommand } from '../utils/keyboard';
 
@@ -11,23 +11,6 @@ import { pressCommand } from '../utils/keyboard';
 // Every cross-width test must POLL for the runtime value to settle, never read
 // it immediately after a resize.
 const XL_PAGE = 1440;
-
-/**
- * Read the RUNTIME maxW off a card's gridstack node (the value the engine
- * enforces, after the XL swap potentially rewrites it).
- */
-async function getRuntimeMaxW(
-  page: import('@playwright/test').Page,
-  id: string,
-): Promise<number | undefined> {
-  return page.evaluate((cardId) => {
-    const el = document.querySelector(
-      `.grid-stack-item[gs-id="${cardId}"]`,
-    ) as (HTMLElement & { gridstackNode?: { maxW?: number } }) | null;
-    if (!el) throw new Error(`Card ${cardId} not found`);
-    return el.gridstackNode?.maxW;
-  }, id);
-}
 
 /**
  * Set the viewport width and poll until the sentinel card's runtime maxW

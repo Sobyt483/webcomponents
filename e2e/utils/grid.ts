@@ -101,6 +101,26 @@ export async function gridBox(page: Page): Promise<GridBox> {
   };
 }
 
+/**
+ * Read the RUNTIME maxW off a card's gridstack node — the value the engine
+ * actually enforces during resize. This reads a gridstack-private field
+ * (`gridstackNode.maxW`) because there is no public API to observe it.
+ * Distinct from the configured maxW in the harness dataset: the XL width-swap
+ * (changeCardSettingsForXlPage) rewrites this field at grid init.
+ */
+export async function getRuntimeMaxW(
+  page: Page,
+  id: string,
+): Promise<number | undefined> {
+  return page.evaluate((cardId) => {
+    const el = document.querySelector(
+      `.grid-stack-item[gs-id="${cardId}"]`,
+    ) as (HTMLElement & { gridstackNode?: { maxW?: number } }) | null;
+    if (!el) throw new Error(`Card ${cardId} not found`);
+    return el.gridstackNode?.maxW;
+  }, id);
+}
+
 export interface Slot {
   x: number;
   y: number;
