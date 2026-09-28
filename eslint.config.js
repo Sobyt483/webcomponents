@@ -4,7 +4,7 @@ import tsEslint from 'typescript-eslint';
 
 export default tsEslint.config(
   {
-    ignores: ['dist', 'coverage', '.angular'],
+    ignores: ['dist', 'coverage', '.angular', 'e2e'],
   },
   ...angularConfig,
   {

@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dashboard E2E Harness</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+      }
+      #dash {
+        display: block;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <mfp-wc-dashboard id="dash"></mfp-wc-dashboard>
+
+    <!--
+      CRITICAL ORDERING: properties are set on the element BEFORE the bundle is
+      imported. The z-flow grid engine (ZflowGridStackEngine) is chosen once, at
+      grid init, from config.zFlow — gridstack reads `engineClass` only in its
+      engine constructor and never swaps it later. Angular Elements seeds signal
+      inputs from DOM properties already present at upgrade, so config must be on
+      the element before customElements.define() upgrades it. A classic (non-
+      module) inline script runs synchronously here, before the deferred module
+      import below — guaranteeing the property is in place at upgrade. Setting
+      config after boot (post-whenDefined) inits the grid on the BASE engine, so
+      keyboard nav and stepped resize silently no-op.
+    -->
+    <script>
+      (function () {
+        // Deterministic z-flow dataset. All loose cards (no sectionId) so the
+        // z-flow engine owns layout and each card is a real .grid-stack-item
+        // with gs-id / gs-x / gs-y and --gs-w / --gs-h. Card CONTENT is
+        // irrelevant to the grid behaviour under test — plain 'wc' div
+        // placeholders keep the harness free of the Angular component registry
+        // and external data.
+        //
+        // Constraint matrix (all start at x:0, effectiveMax = columns - x = 4):
+        //   e2e-a  w1 maxW4 minW1  -> full ladder [1,2,4]
+        //   e2e-b  w2 maxW3 minW1  -> XL swap rewrites maxW 3->4 at init; z-flow
+        //                             packs it at x=1 so effectiveMax = 4-1 = 3,
+        //                             pinning it at 2 (tests the effectiveMax cap)
+        //   e2e-c  w2 maxW4 minW2  -> shrink from 2 blocked by minW 2
+        //   e2e-d  w1 maxW2 minW1  -> grows to 2, capped at own maxW 2 (untouched
+        //                             by the swap — the real per-card maxW test)
+        //   e2e-e  w1 maxW4 minW1  -> move / reorder target
+        //   e2e-f  w1 maxW4 minW1  -> availableCards ONLY -> add flow
+        var H = 40; // z-flow cardHeight (px rows); loose height pinned to this.
+
+        function card(id, w, maxW, minW) {
+          return {
+            id: id,
+            type: 'wc',
+            component: 'div',
+            componentInputs: {},
+            w: w,
+            h: H,
+            x: 0,
+            y: 0,
+            maxW: maxW,
+            minW: minW,
+            label: id,
+          };
+        }
+
+        var CARDS = [
+          card('e2e-a', 1, 4, 1),
+          card('e2e-b', 2, 3, 1),
+          card('e2e-c', 2, 4, 2),
+          card('e2e-d', 1, 2, 1),
+          card('e2e-e', 1, 4, 1),
+        ];
+
+        var AVAILABLE_CARDS = CARDS.map(function (c) {
+          return Object.assign({}, c);
+        });
+        AVAILABLE_CARDS.push(card('e2e-f', 1, 4, 1));
+
+        var el = document.getElementById('dash');
+
+        // Seed inputs as DOM properties on the un-upgraded element.
+        el.config = { editable: true, zFlow: { cardHeight: H } };
+        el.i18n = {
+          title: 'E2E Harness',
+          description: 'Deterministic z-flow dataset for Playwright.',
+        };
+        el.cards = CARDS;
+        el.availableCards = AVAILABLE_CARDS;
+
+        // Expose the latest saved payload for assertions. Tests reset this
+        // before saving, then poll for it to reappear.
+        window.__mfpSaved = null;
+        el.addEventListener('saved', function (e) {
+          window.__mfpSaved = e.detail;
+        });
+
+        // Drag placeholder observability. The grey "origin" placeholder is
+        // shown only in the brief window between gridstack's dragStart and the
+        // first drag event (onDrag immediately hides it again), so polling the
+        // DOM for it is racy — a test can miss the frame it is visible. The
+        // Dashboard component exposes no output() for drag events (only `saved`
+        // is proxied by createCustomElement), so instead we watch the DOM with
+        // a MutationObserver and LATCH a flag the first time each placeholder
+        // ever appears. Tests then assert "was shown" (a durable signal) rather
+        // than "is visible right now" (an ephemeral one). resetDragObservers()
+        // (called from the test) clears the latches before a fresh drag.
+        window.__mfpDrag = { greyShown: false, blueShown: false };
+        window.__mfpResetDrag = function () {
+          window.__mfpDrag = { greyShown: false, blueShown: false };
+        };
+        var isRendered = function (node) {
+          if (!(node instanceof HTMLElement)) return false;
+          var style = getComputedStyle(node);
+          return style.visibility !== 'hidden' && style.display !== 'none';
+        };
+        var dragObserver = new MutationObserver(function () {
+          var grey = document.querySelector(
+            '.mfp-dashboard__drag-origin-placeholder',
+          );
+          if (grey && isRendered(grey)) window.__mfpDrag.greyShown = true;
+          var blue = document.querySelector('.grid-stack-placeholder');
+          if (blue && isRendered(blue)) window.__mfpDrag.blueShown = true;
+        });
+        dragObserver.observe(el, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['style', 'class'],
+        });
+
+        // Readiness signal for the harness helper: element defined + rendered.
+        customElements.whenDefined('mfp-wc-dashboard').then(function () {
+          window.__mfpReady = true;
+        });
+      })();
+    </script>
+
+    <!-- Self-contained dashboard bundle (Angular + gridstack + UI5 + icons).
+         Imported LAST so the properties above are present at element upgrade. -->
+    <script type="module" src="./mfp-wc-dashboard.js"></script>
+  </body>
+</html>
