@@ -117,7 +117,12 @@ export async function resizeCardByStep(
     // target cell (source of resize flake). Aiming at the center of the last
     // column the card should span makes gridstack snap deterministically.
     const slot = await slotOf(page, id);
-    const targetW = slot.w + steps * (direction === 'grow' ? 1 : -1);
+    // Aim past the midpoint between the current span and the adjacent span.
+    // The z-flow ladder roughly doubles each step (3→6→12 at 12 cols, 4→8→12 at
+    // 16 cols). Half the current width is a reliable offset that crosses the
+    // midpoint, letting the engine snap to the next/previous span deterministically.
+    const spanStep = Math.max(2, Math.ceil(slot.w / 2));
+    const targetW = slot.w + steps * spanStep * (direction === 'grow' ? 1 : -1);
 
     // gridstack renders the SE resize handle with autohide (class
     // `ui-resizable-autohide`): it is display:none / zero-size until the grid
@@ -193,10 +198,6 @@ export async function resizeCardByStep(
   let widthAfter = widthBefore;
   for (let attempt = 0; attempt < 3; attempt++) {
     const armed = await doDrag();
-    // Poll for the width to settle after mouse release.
-    await expect
-      .poll(() => readWidth(), { timeout: 2000 })
-      .not.toBe(undefined); // just ensures we can read it — a no-op poll
     widthAfter = await readWidth();
     if (widthAfter !== widthBefore) break;
 

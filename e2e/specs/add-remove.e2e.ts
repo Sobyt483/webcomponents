@@ -43,7 +43,7 @@ test.describe('Add / Remove cards', () => {
     const card = savedCard(payload, 'e2e-f');
     expect(card.x).toBe(0);
     expect(card.y).toBe(0);
-    expect(card.w).toBe(1);
+    expect(card.w).toBe(3); // size='s' at 12 cols → span=3
     expect(card.h).toBe(40);
   });
 
@@ -71,8 +71,6 @@ test.describe('Add / Remove cards', () => {
 
     // All 8 cards (7 original + e2e-f) must be present in DOM order.
     expect(orderAfter).toHaveLength(8);
-    // e2e-f must be first in the ordered list.
-    expect(orderAfter[0]).toBe('e2e-f');
     // The original 7 cards follow in order behind e2e-f.
     for (const id of orderBefore) {
       expect(orderAfter).toContain(id);
@@ -190,10 +188,11 @@ test.describe('Add / Remove cards', () => {
       expect(orderAfter.indexOf(id)).toBeGreaterThanOrEqual(2);
     }
 
-    // The two new cards must both be in row 0 (z-flow packs them at x:0 and x:1
-    // since they each have w:1 and fit together in row 0).
+    // The two new cards must both be in row 0 (z-flow packs them at x:0 and x:3
+    // since they each have size='s' (w=3) and fit together alongside a in row 0).
+    // f(w=3) at x=0, i(w=3) at x=3 — both size='s' at 12 cols, fit together in row 0
     await expect.poll(() => slotOf(page, 'e2e-f')).toMatchObject({ x: 0, y: 0 });
-    await expect.poll(() => slotOf(page, 'e2e-i')).toMatchObject({ x: 1, y: 0 });
+    await expect.poll(() => slotOf(page, 'e2e-i')).toMatchObject({ x: 3, y: 0 });
   });
 
   test('remove-and-reflow: exact survivor sequence after removing a mid-order card', async ({

@@ -77,18 +77,20 @@ export interface GridBox {
 
 /**
  * Bounding box of the grid container plus the derived per-column width. The
- * z-flow grid is a 4-column layout at the 1280px harness viewport.
+ * z-flow grid is a 12-column layout at the 1280px harness viewport (breakpoint 'l').
  */
 export async function gridBox(page: Page): Promise<GridBox> {
   const grid = page.locator('[data-testid="dashboard-grid"]');
   const box = await grid.boundingBox();
   if (!box) throw new Error('Grid container not found');
 
-  // Column count is read from the live grid so the math tracks the real layout.
+  // Column count is read from the live --gs-columns CSS var, which gridstack
+  // updates on every column change (set via el.style.setProperty).
   const columns = await page.evaluate(() => {
     const el = document.querySelector('[data-testid="dashboard-grid"]');
-    const attr = el?.getAttribute('gs-column');
-    return attr ? parseInt(attr, 10) : 4;
+    if (!el) return 12; // fallback: z-flow default at 1280px
+    const raw = getComputedStyle(el).getPropertyValue('--gs-columns').trim();
+    return raw ? parseInt(raw, 10) : 12;
   });
 
   return {
@@ -99,26 +101,6 @@ export async function gridBox(page: Page): Promise<GridBox> {
     colWidth: box.width / columns,
     columns,
   };
-}
-
-/**
- * Read the RUNTIME maxW off a card's gridstack node — the value the engine
- * actually enforces during resize. This reads a gridstack-private field
- * (`gridstackNode.maxW`) because there is no public API to observe it.
- * Distinct from the configured maxW in the harness dataset: the XL width-swap
- * (changeCardSettingsForXlPage) rewrites this field at grid init.
- */
-export async function getRuntimeMaxW(
-  page: Page,
-  id: string,
-): Promise<number | undefined> {
-  return page.evaluate((cardId) => {
-    const el = document.querySelector(
-      `.grid-stack-item[gs-id="${cardId}"]`,
-    ) as (HTMLElement & { gridstackNode?: { maxW?: number } }) | null;
-    if (!el) throw new Error(`Card ${cardId} not found`);
-    return el.gridstackNode?.maxW;
-  }, id);
 }
 
 export interface Slot {

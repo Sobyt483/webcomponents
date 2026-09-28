@@ -192,32 +192,24 @@ test.describe('Move / Reorder cards', () => {
   }) => {
     await enterEditMode(page);
 
-    // Strategy: move ALL cards to width-1 except the front two which are grown
-    // to fill row 0. With 4 columns, if we pack: w3 card at x:0 and a w1+w1
-    // scenario, we can then use keyboard to verify z-flow wraps correctly.
-    //
-    // Simpler approach: grow front card to w:4 (full row). The card behind it
-    // must wrap to x:0 on row 1. Use keyboard resize (deterministic, no pixel
-    // math).
+    // Grow front card to xl (w:12 = full 12-column row at 1280px).
+    // Keyboard resize steps: 3→6 (s→m), 6→12 (m→xl).
 
     const orderBefore = await orderByDom(page);
     const front = orderBefore[0];
     const second = orderBefore[1];
 
-    // Grow front card to fill the entire row (w:4 = 4 columns).
-    // pressCommand with Shift+ArrowRight steps: 1→2, 2→4 (z-flow stepped ladder).
-    await pressCommand(page, front, 'Shift+ArrowRight', { w: 2 });
-    await pressCommand(page, front, 'Shift+ArrowRight', { w: 4 });
+    // Grow front card to fill the entire row (w:12 = 12 columns).
+    await pressCommand(page, front, 'Shift+ArrowRight', { w: 6 });
+    await pressCommand(page, front, 'Shift+ArrowRight', { w: 12 });
 
-    // The front card now spans all 4 columns (x:0, w:4).
-    await expect.poll(() => getWidth(page, front)).toBe(4);
+    // The front card now spans all 12 columns (x:0, w:12).
+    await expect.poll(() => getWidth(page, front)).toBe(12);
     const frontSlot = await slotOf(page, front);
     expect(frontSlot.x).toBe(0);
-    expect(frontSlot.w).toBe(4);
+    expect(frontSlot.w).toBe(12);
 
-    // The second card cannot fit in the same row (0+4+w > 4) and must wrap to
-    // x:0 on the next row. This is the core z-flow packing invariant:
-    // "wrap when curX > 0 && curX + w > columnCount" → second lands at x:0, y>0.
+    // The second card cannot fit in the same row and must wrap to x:0 on next row.
     await expect
       .poll(async () => {
         const s = await slotOf(page, second);
@@ -230,44 +222,40 @@ test.describe('Move / Reorder cards', () => {
     expect(secondSlot.y).toBeGreaterThan(0);
   });
 
-  test('drag-to-arbitrary-slot: drag d from Row 1 to Row 0 col 1 and assert exact resulting order', async ({
+  test('drag-to-arbitrary-slot: drag d from Row 1 to Row 0 col 3 and assert exact resulting order', async ({
     page,
   }) => {
     await enterEditMode(page);
 
-    // The deterministic z-flow layout with 7 cards is:
-    //   Row 0 (gs-y=0):  a(x=0,w=1), b(x=1,w=2)
-    //   Row 1 (gs-y=40): c(x=0,w=2), d(x=2,w=1), e(x=3,w=1)
-    //   Row 2 (gs-y=80): g(x=0,w=1), h(x=1,w=1)
+    // 12-col layout:
+    //   Row 0 (gs-y=0):  a(x=0,w=3), b(x=3,w=6)
+    //   Row 1 (gs-y=40): c(x=0,w=6), d(x=6,w=3), e(x=9,w=3)
+    //   Row 2 (gs-y=80): g(x=0,w=3), h(x=3,w=3)
     //
-    // We drag d (Row 1) up to col 1 of Row 0, inserting it between a and b.
-    // Row 0 and Row 1 are both within the 900px viewport so no off-screen
-    // issues arise. We resolve card ids from live DOM order to stay robust.
+    // Drag d (Row 1, x=6) up to col 3 of Row 0 — between a(x=0,w=3) and b(x=3,w=6).
+    // d(w=3) inserts at x=3, pushing b to x=6: a(x=0)+d(x=3)+b(x=6)=12 fills Row 0.
     const orderBefore = await orderByDom(page);
 
-    // Identify d by its known slot (x=2, y=40) in the deterministic layout.
-    const dId = orderBefore[3]; // d is 4th in zFlowOrder
+    // d is 4th in zFlowOrder (index 3).
+    const dId = orderBefore[3];
     const dSlotBefore = await slotOf(page, dId);
-    // Sanity-check: d should be in Row 1 (gs-y=40), not row 0.
     expect(dSlotBefore.y).toBe(40);
-    expect(dSlotBefore.x).toBe(2);
+    expect(dSlotBefore.x).toBe(6);
 
-    // Drag d to Row 0 (gs-y=0) at col 1 — between a (x=0) and b (x=1,w=2).
-    await dragCardToSlot(page, dId, 1, 0);
+    // Drag d to Row 0 (gs-y=0) at col 3 — between a (x=0,w=3) and b (x=3,w=6).
+    await dragCardToSlot(page, dId, 3, 0);
 
-    // After inserting d at position 1 in zFlowOrder, the new order is:
-    //   [a, d, b, c, e, g, h]
-    // Z-flow repacks with 4 cols:
-    //   a(w=1,x=0), d(w=1,x=1), b(w=2,x=2): Row 0 (0+1+1+2=4)
-    //   c(w=2,x=0), e(w=1,x=2), g(w=1,x=3): Row 1 (wrap: 4+2>4)
-    //   h(w=1,x=0): Row 2 (wrap: 4+1>4)
+    // New order: [a, d, b, c, e, g, h].
+    // Repack: a(x=0,w=3), d(x=3,w=3), b(x=6,w=6) fills Row 0 (3+3+6=12).
+    //         c(x=0,w=6), e(x=6,w=3), g(x=9,w=3) fills Row 1.
+    //         h(x=0,w=3) in Row 2.
     const expectedOrder = [
       orderBefore[0], // a: x=0, y=0
-      dId,            // d: x=1, y=0
-      orderBefore[1], // b: x=2, y=0
+      dId,            // d: x=3, y=0
+      orderBefore[1], // b: x=6, y=0
       orderBefore[2], // c: x=0, y=40
-      orderBefore[4], // e: x=2, y=40
-      orderBefore[5], // g: x=3, y=40
+      orderBefore[4], // e: x=6, y=40
+      orderBefore[5], // g: x=9, y=40
       orderBefore[6], // h: x=0, y=80
     ];
 
