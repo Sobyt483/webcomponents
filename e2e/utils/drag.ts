@@ -1,5 +1,5 @@
-import { expect, type Page } from '@playwright/test';
 import { CELL_HEIGHT, gridBox, slotOf } from './grid';
+import { type Page, expect } from '@playwright/test';
 
 // Re-export for consumers that previously imported these from here.
 export { getWidth } from './grid';
@@ -57,7 +57,9 @@ export async function dragCardToSlot(
   await page.mouse.move(srcX, srcY);
   await page.mouse.down();
   // Small arming nudge so gridstack's drag threshold fires before the main sweep.
-  await page.mouse.move(srcX + 5, srcY + Math.sign(dstY - srcY) * 5, { steps: 3 });
+  await page.mouse.move(srcX + 5, srcY + Math.sign(dstY - srcY) * 5, {
+    steps: 3,
+  });
 
   // Move in multiple hops so drag events fire along the path.
   const steps = 20;
@@ -254,7 +256,9 @@ export async function dragCardByRows(
   await page.mouse.move(srcX, srcY);
   await page.mouse.down();
   // Small nudge to arm the drag threshold before the main sweep.
-  await page.mouse.move(srcX + 5, srcY + Math.sign(deltaRows) * 5, { steps: 3 });
+  await page.mouse.move(srcX + 5, srcY + Math.sign(deltaRows) * 5, {
+    steps: 3,
+  });
   await page.mouse.move(srcX, dstY, { steps: 25 });
 
   // Poll until the card's gs-y reflects the new row. This fires BEFORE mouse.up

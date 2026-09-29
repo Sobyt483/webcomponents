@@ -1,8 +1,8 @@
-import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Zero-dependency static server for the e2e harness. Serves the standalone
 // harness page (e2e/fixtures/index.html) at `/` and everything else from the

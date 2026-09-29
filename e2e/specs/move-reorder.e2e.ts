@@ -1,9 +1,9 @@
-import { expect, test } from '@playwright/test';
 import { dragCardByRows, dragCardToSlot } from '../utils/drag';
 import { getWidth, orderByDom, slotOf } from '../utils/grid';
-import { openHarness, enterEditMode } from '../utils/harness';
+import { enterEditMode, openHarness } from '../utils/harness';
 import { pressCommand } from '../utils/keyboard';
 import { readSaved, resetSaved, saveEdit, savedCard } from '../utils/saved';
+import { expect, test } from '@playwright/test';
 
 // z-flow renders each loose card h:40 rows tall at a 10px cell height, so a card
 // occupies ~400px and adjacent slots are one card-height apart vertically — NOT
@@ -251,7 +251,7 @@ test.describe('Move / Reorder cards', () => {
     //         h(x=0,w=3) in Row 2.
     const expectedOrder = [
       orderBefore[0], // a: x=0, y=0
-      dId,            // d: x=3, y=0
+      dId, // d: x=3, y=0
       orderBefore[1], // b: x=6, y=0
       orderBefore[2], // c: x=0, y=40
       orderBefore[4], // e: x=6, y=40
@@ -259,9 +259,6 @@ test.describe('Move / Reorder cards', () => {
       orderBefore[6], // h: x=0, y=80
     ];
 
-    await expect
-      .poll(() => orderByDom(page))
-      .toEqual(expectedOrder);
+    await expect.poll(() => orderByDom(page)).toEqual(expectedOrder);
   });
-
 });

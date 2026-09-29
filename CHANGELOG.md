@@ -12,6 +12,7 @@ and [releases](https://github.com/openmfp/webcomponents/releases) for details.
 ## [1.8.0] - 2026-09-28
 
 ### Features
+
 - _(dashboard)_ Size-based z-flow cards on a 4/8/12/16 column grid (#323)
 
 ## [1.6.0] - 2026-09-22

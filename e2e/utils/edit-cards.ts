@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { type Page, expect } from '@playwright/test';
 
 /**
  * Open the "Edit Cards" dialog from within edit mode. The toolbar edit-cards

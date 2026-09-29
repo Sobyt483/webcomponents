@@ -1,8 +1,12 @@
-import { expect, test } from '@playwright/test';
-import { openEditCardsDialog, saveEditCards, toggleCard } from '../utils/edit-cards';
+import {
+  openEditCardsDialog,
+  saveEditCards,
+  toggleCard,
+} from '../utils/edit-cards';
 import { orderByDom, slotOf } from '../utils/grid';
-import { openHarness, enterEditMode } from '../utils/harness';
+import { enterEditMode, openHarness } from '../utils/harness';
 import { readSaved, resetSaved, saveEdit, savedCard } from '../utils/saved';
+import { expect, test } from '@playwright/test';
 
 test.describe('Add / Remove cards', () => {
   test.beforeEach(async ({ page }) => {
@@ -28,12 +32,12 @@ test.describe('Add / Remove cards', () => {
     await saveEditCards(page);
 
     // Card must now be present in the DOM.
-    await expect(
-      page.locator('.grid-stack-item[gs-id="e2e-f"]'),
-    ).toBeVisible();
+    await expect(page.locator('.grid-stack-item[gs-id="e2e-f"]')).toBeVisible();
 
     // New loose cards are moved to front (zFlowOrder 0) → x:0, y:0.
-    await expect.poll(() => slotOf(page, 'e2e-f')).toMatchObject({ x: 0, y: 0 });
+    await expect
+      .poll(() => slotOf(page, 'e2e-f'))
+      .toMatchObject({ x: 0, y: 0 });
 
     // Save the edit and verify the payload.
     await resetSaved(page);
@@ -61,7 +65,9 @@ test.describe('Add / Remove cards', () => {
     await saveEditCards(page);
 
     // e2e-f is added to the front → it must be at x:0, y:0.
-    await expect.poll(() => slotOf(page, 'e2e-f')).toMatchObject({ x: 0, y: 0 });
+    await expect
+      .poll(() => slotOf(page, 'e2e-f'))
+      .toMatchObject({ x: 0, y: 0 });
 
     // The formerly-front card must have shifted to a later position.
     const orderAfter = await orderByDom(page);
@@ -191,8 +197,12 @@ test.describe('Add / Remove cards', () => {
     // The two new cards must both be in row 0 (z-flow packs them at x:0 and x:3
     // since they each have size='s' (w=3) and fit together alongside a in row 0).
     // f(w=3) at x=0, i(w=3) at x=3 — both size='s' at 12 cols, fit together in row 0
-    await expect.poll(() => slotOf(page, 'e2e-f')).toMatchObject({ x: 0, y: 0 });
-    await expect.poll(() => slotOf(page, 'e2e-i')).toMatchObject({ x: 3, y: 0 });
+    await expect
+      .poll(() => slotOf(page, 'e2e-f'))
+      .toMatchObject({ x: 0, y: 0 });
+    await expect
+      .poll(() => slotOf(page, 'e2e-i'))
+      .toMatchObject({ x: 3, y: 0 });
   });
 
   test('remove-and-reflow: exact survivor sequence after removing a mid-order card', async ({

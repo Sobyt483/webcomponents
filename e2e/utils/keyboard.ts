@@ -1,5 +1,5 @@
-import { expect, type Page } from '@playwright/test';
-import { slotOf, type Slot } from './grid';
+import { type Slot, slotOf } from './grid';
+import { type Page, expect } from '@playwright/test';
 
 /**
  * Focus a card's grid-item host. The dashboard's keyboard handler only acts

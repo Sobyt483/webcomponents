@@ -75,20 +75,42 @@
         });
 
         const CARDS = [
-          card('e2e-a', 's', 0),  // w=3 at 12 cols
-          card('e2e-b', 'm', 1),  // w=6 at 12 cols
-          card('e2e-c', 'm', 2),  // w=6 at 12 cols
-          card('e2e-d', 's', 3),  // w=3 at 12 cols
-          card('e2e-e', 's', 4),  // w=3 at 12 cols
-          card('e2e-g', 's', 5),  // w=3 at 12 cols
-          card('e2e-h', 's', 6),  // w=3 at 12 cols
+          card('e2e-a', 's', 0), // w=3 at 12 cols
+          card('e2e-b', 'm', 1), // w=6 at 12 cols
+          card('e2e-c', 'm', 2), // w=6 at 12 cols
+          card('e2e-d', 's', 3), // w=3 at 12 cols
+          card('e2e-e', 's', 4), // w=3 at 12 cols
+          card('e2e-g', 's', 5), // w=3 at 12 cols
+          card('e2e-h', 's', 6), // w=3 at 12 cols
         ];
 
         // AVAILABLE_CARDS copies strip zFlowOrder: available-only cards have no
         // predetermined order — zFlowOrder is assigned when they are added to front.
-        const AVAILABLE_CARDS = CARDS.map(({ zFlowOrder: _, ...rest }) => ({ ...rest }));
-        AVAILABLE_CARDS.push({ id: 'e2e-f', type: 'wc', component: 'div', componentInputs: {}, size: 's', h: H, x: 0, y: 0, label: 'e2e-f' });
-        AVAILABLE_CARDS.push({ id: 'e2e-i', type: 'wc', component: 'div', componentInputs: {}, size: 's', h: H, x: 0, y: 0, label: 'e2e-i' });
+        const AVAILABLE_CARDS = CARDS.map(({ zFlowOrder: _, ...rest }) => ({
+          ...rest,
+        }));
+        AVAILABLE_CARDS.push({
+          id: 'e2e-f',
+          type: 'wc',
+          component: 'div',
+          componentInputs: {},
+          size: 's',
+          h: H,
+          x: 0,
+          y: 0,
+          label: 'e2e-f',
+        });
+        AVAILABLE_CARDS.push({
+          id: 'e2e-i',
+          type: 'wc',
+          component: 'div',
+          componentInputs: {},
+          size: 's',
+          h: H,
+          x: 0,
+          y: 0,
+          label: 'e2e-i',
+        });
 
         const el = document.getElementById('dash');
 
@@ -104,7 +126,9 @@
         // Expose the latest saved payload for assertions. Tests reset this
         // before saving, then poll for it to reappear.
         window.__mfpSaved = null;
-        el.addEventListener('saved', (e) => { window.__mfpSaved = e.detail; });
+        el.addEventListener('saved', (e) => {
+          window.__mfpSaved = e.detail;
+        });
 
         // Drag placeholder observability. The grey "origin" placeholder is
         // shown only in the brief window between gridstack's dragStart and the
@@ -117,14 +141,18 @@
         // than "is visible right now" (an ephemeral one). resetDragObservers()
         // (called from the test) clears the latches before a fresh drag.
         window.__mfpDrag = { greyShown: false, blueShown: false };
-        window.__mfpResetDrag = () => { window.__mfpDrag = { greyShown: false, blueShown: false }; };
+        window.__mfpResetDrag = () => {
+          window.__mfpDrag = { greyShown: false, blueShown: false };
+        };
         const isRendered = (node) => {
           if (!(node instanceof HTMLElement)) return false;
           const style = getComputedStyle(node);
           return style.visibility !== 'hidden' && style.display !== 'none';
         };
         const dragObserver = new MutationObserver(() => {
-          const grey = document.querySelector('.mfp-dashboard__drag-origin-placeholder');
+          const grey = document.querySelector(
+            '.mfp-dashboard__drag-origin-placeholder',
+          );
           if (grey && isRendered(grey)) window.__mfpDrag.greyShown = true;
           const blue = document.querySelector('.grid-stack-placeholder');
           if (blue && isRendered(blue)) window.__mfpDrag.blueShown = true;

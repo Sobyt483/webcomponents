@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { type Page, expect } from '@playwright/test';
 
 export interface SavedCard {
   id: string;
@@ -41,14 +41,14 @@ export async function readSaved(page: Page): Promise<SavedPayload> {
   await expect
     .poll(() =>
       page.evaluate(
-        () => (window as unknown as { __mfpSaved: unknown }).__mfpSaved !== null,
+        () =>
+          (window as unknown as { __mfpSaved: unknown }).__mfpSaved !== null,
       ),
     )
     .toBe(true);
 
   return page.evaluate(
-    () =>
-      (window as unknown as { __mfpSaved: SavedPayload }).__mfpSaved,
+    () => (window as unknown as { __mfpSaved: SavedPayload }).__mfpSaved,
   );
 }
 

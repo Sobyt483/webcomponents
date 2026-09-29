@@ -44,7 +44,10 @@ export async function getHeight(page: Page, id: string): Promise<number> {
  * [gs-id] element), so it is not coupled to the fixture roster — new cards
  * added during a test are included automatically.
  */
-export async function orderByDom(page: Page, ids?: string[]): Promise<string[]> {
+export async function orderByDom(
+  page: Page,
+  ids?: string[],
+): Promise<string[]> {
   return page.evaluate((knownIds) => {
     let elements: Element[];
     if (knownIds) {
@@ -52,7 +55,9 @@ export async function orderByDom(page: Page, ids?: string[]): Promise<string[]> 
         .map((id) => document.querySelector(`.grid-stack-item[gs-id="${id}"]`))
         .filter((el): el is Element => el !== null);
     } else {
-      elements = Array.from(document.querySelectorAll('.grid-stack-item[gs-id]'));
+      elements = Array.from(
+        document.querySelectorAll('.grid-stack-item[gs-id]'),
+      );
     }
 
     return elements

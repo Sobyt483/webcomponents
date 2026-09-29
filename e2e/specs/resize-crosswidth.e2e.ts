@@ -1,8 +1,8 @@
-import { expect, test } from '@playwright/test';
 import { resizeCardByStep } from '../utils/drag';
 import { getWidth } from '../utils/grid';
-import { openHarness, enterEditMode } from '../utils/harness';
+import { enterEditMode, openHarness } from '../utils/harness';
 import { pressCommand } from '../utils/keyboard';
+import { expect, test } from '@playwright/test';
 
 // At 1280px viewport: 12 columns (breakpoint 'l'), spans = [3, 6, 12].
 // At 1440px+ viewport: 16 columns (breakpoint 'xl'), spans = [4, 8, 12].

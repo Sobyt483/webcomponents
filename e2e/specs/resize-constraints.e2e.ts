@@ -1,8 +1,8 @@
-import { expect, test } from '@playwright/test';
 import { resizeCardByStep } from '../utils/drag';
 import { getHeight, getWidth, slotOf } from '../utils/grid';
-import { openHarness, enterEditMode } from '../utils/harness';
+import { enterEditMode, openHarness } from '../utils/harness';
 import { readSaved, resetSaved, saveEdit, savedCard } from '../utils/saved';
+import { expect, test } from '@playwright/test';
 
 // At 1280px viewport the z-flow grid uses 12 columns (breakpoint 'l').
 // Spans per size: s=3, m=6, xl=12.
@@ -13,7 +13,9 @@ test.describe('Resize constraints', () => {
     await openHarness(page);
   });
 
-  test('e2e-a: full ladder s→m→xl (3→6→12) via drag resize', async ({ page }) => {
+  test('e2e-a: full ladder s→m→xl (3→6→12) via drag resize', async ({
+    page,
+  }) => {
     await enterEditMode(page);
 
     // e2e-a is size='s'; at 12 cols span=3.
@@ -87,7 +89,9 @@ test.describe('Resize constraints', () => {
     expect(hAfter).toBe(40);
   });
 
-  test('saved payload w matches final --gs-w after resize', async ({ page }) => {
+  test('saved payload w matches final --gs-w after resize', async ({
+    page,
+  }) => {
     await enterEditMode(page);
 
     // Grow e2e-a to width 6 (s→m).

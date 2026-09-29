@@ -1,8 +1,8 @@
-import { expect, test } from '@playwright/test';
 import { getWidth, orderByDom, slotOf } from '../utils/grid';
-import { openHarness, enterEditMode } from '../utils/harness';
+import { enterEditMode, openHarness } from '../utils/harness';
 import { focusCard, pressCommand } from '../utils/keyboard';
 import { readSaved, resetSaved, saveEdit, savedCard } from '../utils/saved';
+import { expect, test } from '@playwright/test';
 
 test.describe('Keyboard navigation', () => {
   test.beforeEach(async ({ page }) => {
@@ -113,9 +113,7 @@ test.describe('Keyboard navigation', () => {
       .toEqual([second, front, ...orderBefore.slice(2)]);
 
     await pressCommand(page, front, 'Control+ArrowLeft');
-    await expect
-      .poll(() => orderByDom(page))
-      .toEqual(orderBefore);
+    await expect.poll(() => orderByDom(page)).toEqual(orderBefore);
   });
 
   test('Control+End moves front card to the last slot in its row', async ({
@@ -148,9 +146,7 @@ test.describe('Keyboard navigation', () => {
           Array.from(
             document.querySelectorAll<HTMLElement>('.grid-stack-item[gs-id]'),
           )
-            .filter(
-              (el) => parseInt(el.getAttribute('gs-y') ?? '99', 10) === 0,
-            )
+            .filter((el) => parseInt(el.getAttribute('gs-y') ?? '99', 10) === 0)
             .sort(
               (a, b) =>
                 parseInt(a.getAttribute('gs-x') ?? '0', 10) -
@@ -202,7 +198,10 @@ test.describe('Keyboard navigation', () => {
     // Ctrl+End moves the front card to the last position within row 0. The
     // resulting row-0 sequence should have all the former row-0 members minus
     // the front, appended with the front at the end.
-    const expectedRow0After = [...row0Before.filter((id) => id !== front), front];
+    const expectedRow0After = [
+      ...row0Before.filter((id) => id !== front),
+      front,
+    ];
 
     await pressCommand(page, front, 'Control+End');
 
@@ -213,9 +212,7 @@ test.describe('Keyboard navigation', () => {
           Array.from(
             document.querySelectorAll<HTMLElement>('.grid-stack-item[gs-id]'),
           )
-            .filter(
-              (el) => parseInt(el.getAttribute('gs-y') ?? '99', 10) === 0,
-            )
+            .filter((el) => parseInt(el.getAttribute('gs-y') ?? '99', 10) === 0)
             .sort(
               (a, b) =>
                 parseInt(a.getAttribute('gs-x') ?? '0', 10) -
@@ -307,16 +304,14 @@ test.describe('Keyboard navigation', () => {
     const expectedOrder = [
       orderBefore[1], // b: x=0, y=0
       orderBefore[2], // c: x=6, y=0
-      front,          // a: x=0, y=40
+      front, // a: x=0, y=40
       orderBefore[3], // d: x=3, y=40
       orderBefore[4], // e: x=6, y=40
       orderBefore[5], // g: x=0, y=80
       orderBefore[6], // h: x=3, y=80
     ];
 
-    await expect
-      .poll(() => orderByDom(page))
-      .toEqual(expectedOrder);
+    await expect.poll(() => orderByDom(page)).toEqual(expectedOrder);
   });
 
   test('Control+ArrowUp on a row-0 card is a no-op (order unchanged)', async ({
@@ -557,12 +552,14 @@ test.describe('Keyboard navigation', () => {
 
     // The first card of the previous row in zFlowOrder is the card in orderBefore
     // with the smallest index among those in the previous row.
-    const prevRowFirstIdx = (await Promise.all(
-      orderBefore.map(async (id, i) => {
-        const s = await slotOf(page, id);
-        return s.y === prevRowY ? i : Infinity;
-      }),
-    )).reduce((min, i) => Math.min(min, i), Infinity);
+    const prevRowFirstIdx = (
+      await Promise.all(
+        orderBefore.map(async (id, i) => {
+          const s = await slotOf(page, id);
+          return s.y === prevRowY ? i : Infinity;
+        }),
+      )
+    ).reduce((min, i) => Math.min(min, i), Infinity);
 
     // Ctrl+Up moves cardInRow1 to the start of the previous row (before prevRowFirstIdx).
     const expectedOrder = [
@@ -574,9 +571,7 @@ test.describe('Keyboard navigation', () => {
 
     await pressCommand(page, cardInRow1, 'Control+ArrowUp');
 
-    await expect
-      .poll(() => orderByDom(page))
-      .toEqual(expectedOrder);
+    await expect.poll(() => orderByDom(page)).toEqual(expectedOrder);
   });
 
   test('Productive Control+ArrowLeft on mid-row card: assert EXACT resulting orderByDom', async ({
@@ -607,9 +602,7 @@ test.describe('Keyboard navigation', () => {
 
     await pressCommand(page, midRowCard, 'Control+ArrowLeft');
 
-    await expect
-      .poll(() => orderByDom(page))
-      .toEqual(expectedOrder);
+    await expect.poll(() => orderByDom(page)).toEqual(expectedOrder);
   });
 
   test('Control+ArrowUp nearest-by-x: d at Row1 x=6 lands in Row0 at x=9, not row-start', async ({
@@ -641,7 +634,7 @@ test.describe('Keyboard navigation', () => {
 
     // Precondition: d must be at x=6 (above row-start) to exercise the nearest-by-x rule.
     expect(startSlot.y).toBe(40); // Row 1
-    expect(startSlot.x).toBe(6);  // x>0 — this is the crux
+    expect(startSlot.x).toBe(6); // x>0 — this is the crux
 
     await pressCommand(page, dId, 'Control+ArrowUp');
 
@@ -666,16 +659,14 @@ test.describe('Keyboard navigation', () => {
     const expectedOrder = [
       orderBefore[0], // a: x=0, y=0
       orderBefore[1], // b: x=3, y=0
-      dId,            // d: x=9, y=0 (nearest to source.x=6 via tie-break)
+      dId, // d: x=9, y=0 (nearest to source.x=6 via tie-break)
       orderBefore[2], // c: x=0, y=40
       orderBefore[4], // e: x=6, y=40
       orderBefore[5], // g: x=9, y=40
       orderBefore[6], // h: x=0, y=80
     ];
 
-    await expect
-      .poll(() => orderByDom(page))
-      .toEqual(expectedOrder);
+    await expect.poll(() => orderByDom(page)).toEqual(expectedOrder);
   });
 
   test('Control+ArrowDown nearest-by-x: e at Row1 x=9 lands in Row2 at x=3, not row-start', async ({
@@ -702,7 +693,7 @@ test.describe('Keyboard navigation', () => {
 
     // Precondition: e must be at x=9 (above row-start) to exercise nearest-by-x.
     expect(startSlot.y).toBe(40); // Row 1
-    expect(startSlot.x).toBe(9);  // x>0 — this is the crux
+    expect(startSlot.x).toBe(9); // x>0 — this is the crux
 
     await pressCommand(page, eId, 'Control+ArrowDown');
 
@@ -731,12 +722,10 @@ test.describe('Keyboard navigation', () => {
       orderBefore[3], // d: x=6, y=40
       orderBefore[5], // g: x=9, y=40
       orderBefore[6], // h: x=0, y=80
-      eId,            // e: x=3, y=80 (nearest to source.x=9, slot after h)
+      eId, // e: x=3, y=80 (nearest to source.x=9, slot after h)
     ];
 
-    await expect
-      .poll(() => orderByDom(page))
-      .toEqual(expectedOrder);
+    await expect.poll(() => orderByDom(page)).toEqual(expectedOrder);
   });
 
   test('Productive Control+Home: a mid-row card moves to row-start and full row order updates', async ({

@@ -1,6 +1,6 @@
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // Repo root, resolved from this config's location (e2e/ -> ..). The webServer
 // command and serve-e2e.mjs both rely on cwd === repo root.

@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { type Page, expect } from '@playwright/test';
 
 /**
  * Navigate to the harness page and wait until the custom element has upgraded
@@ -9,7 +9,9 @@ export async function openHarness(page: Page): Promise<void> {
   await page.goto('/');
 
   // Wait for the element definition + readiness flag set by the fixture.
-  await page.waitForFunction(() => (window as unknown as { __mfpReady?: boolean }).__mfpReady === true);
+  await page.waitForFunction(
+    () => (window as unknown as { __mfpReady?: boolean }).__mfpReady === true,
+  );
 
   // The dashboard host renders its root container with data-testid=dashboard.
   await expect(page.locator('[data-testid="dashboard"]')).toBeVisible();
@@ -30,5 +32,7 @@ export async function enterEditMode(page: Page): Promise<void> {
   // Edit mode is active once the root container has the edit class and the
   // save button is visible.
   await expect(page.locator('.mfp-dashboard.edit')).toBeVisible();
-  await expect(page.locator('[data-testid="dashboard-save-btn"]')).toBeVisible();
+  await expect(
+    page.locator('[data-testid="dashboard-save-btn"]'),
+  ).toBeVisible();
 }
