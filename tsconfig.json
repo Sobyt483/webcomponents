@@ -26,7 +26,7 @@
     "strictTemplates": true
   },
   "files": [],
-  "exclude": ["vitest.config.ts"],
+  "exclude": ["vitest.config.ts", "e2e"],
   "references": [
     {
       "path": "./projects/ngx/tsconfig.lib.json"

@@ -6,6 +6,7 @@
   "scripts": {
     "build:ngx": "ng build ngx && node scripts/postbuild-ngx.mjs",
     "build:wc": "ng build webcomponents && ng build webcomponents-dashboard && node scripts/bundle-wc.mjs",
+    "build:wc-dashboard": "ng build webcomponents-dashboard && node e2e/bundle-wc-dashboard.mjs",
     "build": "npm run build:ngx && npm run build:wc",
     "build:watch": "node -e \"require('fs').mkdirSync('dist',{recursive:true})\" && nodemon --ignore dist --ignore public --ext js,yml,yaml,ts,html,css,scss,json,md --exec \"rimraf dist && npm run build && npm run yalc:publish\"",
     "yalc:publish": "yalc publish dist/ngx --push --sig && yalc publish dist/webcomponents --push --sig",
@@ -17,7 +18,10 @@
     "lint": "ng lint",
     "lint:fix": "ng lint --fix",
     "format": "prettier . --write --list-different",
-    "check-format": "prettier . --check"
+    "check-format": "prettier . --check",
+    "e2e": "playwright test --config e2e/playwright.config.ts",
+    "e2e:headed": "playwright test --config e2e/playwright.config.ts --headed",
+    "e2e:ui": "playwright test --config e2e/playwright.config.ts --ui"
   },
   "repository": {
     "type": "git",
@@ -55,6 +59,7 @@
     "@compodoc/compodoc": "2.0.0",
     "@openmfp/config-prettier": "0.9.2",
     "@openmfp/eslint-config-typescript": "0.7.15",
+    "@playwright/test": "^1.63.0",
     "@storybook/addon-a11y": "10.6.0",
     "@storybook/addon-docs": "10.6.0",
     "@storybook/addon-links": "10.6.0",
