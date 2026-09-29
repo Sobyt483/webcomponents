@@ -2,8 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Repo root, resolved from this config's location (e2e/ -> ..). The webServer
-// command and serve-e2e.mjs both rely on cwd === repo root.
+// Repo root, resolved from this config's location (e2e/ -> ..).
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 // E2E config for the z-flow dashboard. Fully independent of Storybook: the
@@ -40,9 +39,8 @@ export default defineConfig({
   ],
   webServer: {
     // Build the dashboard bundle, then serve it + the harness page. Both steps
-    // must run from the repo root; Playwright otherwise defaults cwd to this
-    // config's directory (e2e/), which breaks `node scripts/serve-e2e.mjs`.
-    command: 'npm run build:wc-dashboard && node scripts/serve-e2e.mjs',
+    // must run from the repo root so the build command resolves workspace paths.
+    command: 'npm run build:wc-dashboard && node e2e/serve-e2e.mjs',
     cwd: repoRoot,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,

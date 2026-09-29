@@ -6,7 +6,7 @@
   "scripts": {
     "build:ngx": "ng build ngx && node scripts/postbuild-ngx.mjs",
     "build:wc": "ng build webcomponents && ng build webcomponents-dashboard && node scripts/bundle-wc.mjs",
-    "build:wc-dashboard": "ng build webcomponents-dashboard && node scripts/bundle-wc-dashboard.mjs",
+    "build:wc-dashboard": "ng build webcomponents-dashboard && node e2e/bundle-wc-dashboard.mjs",
     "build": "npm run build:ngx && npm run build:wc",
     "build:watch": "node -e \"require('fs').mkdirSync('dist',{recursive:true})\" && nodemon --ignore dist --ignore public --ext js,yml,yaml,ts,html,css,scss,json,md --exec \"rimraf dist && npm run build && npm run yalc:publish\"",
     "yalc:publish": "yalc publish dist/ngx --push --sig && yalc publish dist/webcomponents --push --sig",

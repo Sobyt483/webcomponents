@@ -57,11 +57,11 @@ const server = createServer(async (req, res) => {
     const data = await readFile(filePath);
     const type = MIME[extname(filePath)] || 'application/octet-stream';
     return send(res, 200, data, type);
-  } catch (err) {
-    if (err && err.code === 'ENOENT') {
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
       return send(res, 404, 'Not found');
     }
-    return send(res, 500, String(err));
+    return send(res, 500, String(error));
   }
 });
 
