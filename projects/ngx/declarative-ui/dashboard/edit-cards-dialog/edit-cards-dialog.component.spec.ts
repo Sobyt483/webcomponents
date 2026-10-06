@@ -2,7 +2,7 @@ import { DashboardI18nService } from '../i18n';
 import { CardConfig } from '../models';
 import { EditCardsDialog } from './edit-cards-dialog.component';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { setLanguage } from '@ui5/webcomponents-base/dist/config/Language.js';
+import { fireLanguageChange } from '@ui5/webcomponents-base/dist/locale/languageChange.js';
 import { axe } from 'vitest-axe';
 
 type Fixture = ComponentFixture<EditCardsDialog>;
@@ -114,7 +114,7 @@ describe('EditCardsDialog', () => {
     }
 
     afterEach(async () => {
-      await setLanguage('en');
+      await fireLanguageChange('en');
     });
 
     it('lists cards sorted by label, falling back to the component name', () => {
@@ -156,11 +156,11 @@ describe('EditCardsDialog', () => {
         { id: 'apple', component: 'mfp-a', label: 'Äpple' },
       ]);
 
-      await setLanguage('de');
+      await fireLanguageChange('de');
       fixture.detectChanges();
       expect(rowIds(fixture)).toEqual(['apple', 'zebra']);
 
-      await setLanguage('sv');
+      await fireLanguageChange('sv');
       fixture.detectChanges();
       expect(rowIds(fixture)).toEqual(['zebra', 'apple']);
     });
