@@ -9,6 +9,11 @@ and [releases](https://github.com/openmfp/webcomponents/releases) for details.
 
 <!-- git-cliff:insert -->
 
+## [1.9.1] - 2026-10-07
+
+### Bug Fixes
+- _(deps)_ Update Angular tooling to 22.2 and resolve vulnerabilities (#337)
+
 ## [1.9.0] - 2026-10-06
 
 ### Features
