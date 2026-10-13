@@ -9,6 +9,11 @@ and [releases](https://github.com/openmfp/webcomponents/releases) for details.
 
 <!-- git-cliff:insert -->
 
+## [1.10.0] - 2026-10-13
+
+### Features
+- Add d.ts for dashboard (#343)- Migrate zFlow to gridstack v14 list mode (#338)
+
 ## [1.9.1] - 2026-10-07
 
 ### Bug Fixes
