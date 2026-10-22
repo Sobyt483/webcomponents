@@ -114,12 +114,15 @@ export class DeclarativeTableCard<R extends GenericResource> {
   protected pendingResource = signal<R | null>(null);
   /**
    * Fields passed as the initial `[fields]` input to the create dialog. The
-   * dialog owns any subsequent overrides from the `onFieldChange` hook; the
-   * card only seeds this once per open to resolve a (possibly thunk) config.
+   * card owns the state now: the dialog surfaces `fieldsUpdated` from the
+   * `onFieldChange` hook, which the card writes back here so the dialog sees
+   * the new fields on the next render.
    */
   protected resolvedCreateFields = signal<FormFieldDefinition[]>([]);
-  /** Edit variant of {@link resolvedCreateFields}. */
   protected resolvedEditFields = signal<FormFieldDefinition[]>([]);
+
+  private readonly createDialog = viewChild<ResourceFormDialog>('createDialog');
+  private readonly editDialog = viewChild<ResourceFormDialog>('editDialog');
 
   protected tableConfig = computed(() => this.config()?.tableConfig);
   protected header = computed(() => this.config()?.header);
@@ -150,15 +153,6 @@ export class DeclarativeTableCard<R extends GenericResource> {
     () => this.config()?.buttonSettings?.searchButton,
   );
   protected effectiveColumns = computed(() => this.tableConfig()?.fields ?? []);
-  protected editInitialValue = computed(() => {
-    const pendingResource = this.pendingResource();
-    const editConfig = this.editFormConfig();
-    if (!pendingResource || !editConfig) {
-      return {};
-    }
-
-    return this.buildInitialValues(this.resolvedEditFields(), pendingResource);
-  });
 
   protected searchConfig = computed(() => this.config()?.searchConfig);
   protected resourcesSearchable = computed(() => !!this.searchConfig());
@@ -276,15 +270,15 @@ export class DeclarativeTableCard<R extends GenericResource> {
   private async openEditDialog(resource: R): Promise<void> {
     const config = this.config()?.editResourceFormConfig?.(resource);
     const fields = await this.resolveFormFields(config?.fields);
-    // A newer update action may have replaced the pending resource while we
-    // awaited the field resolver; ignore this stale result so the dialog never
-    // shows one resource's fields with another's initial values.
     if (this.pendingResource() !== resource) {
       return;
     }
 
     this.resolvedEditFields.set(fields);
     this.editDialogOpen.set(true);
+    const initialValues = this.buildInitialValues(fields, resource);
+
+    this.editDialog()?.patchForm(initialValues, { emitEvent: false });
   }
 
   private async resolveFormFields(
@@ -309,24 +303,38 @@ export class DeclarativeTableCard<R extends GenericResource> {
     this.deleteDialogOpen.set(false);
   }
 
-  /**
-   * Re-emits the card's public `createFieldChange` output. The dialog itself
-   * owns the `onFieldChange` hook lifecycle (last-write-wins guard + override
-   * application) — the card only forwards the event upstream.
-   */
   onCreateFieldChange(event: FormFieldChangeEvent): void {
     this.createFieldChange.emit(event);
   }
 
-  /**
-   * Re-emits the card's public `editFieldChange` output, wrapped with the
-   * current pending resource for host context. No-op when there is no pending
-   * resource (defensive — the edit dialog should not be open in that state).
-   */
   onEditFieldChange(event: FormFieldChangeEvent): void {
     const resource = this.pendingResource();
     if (resource) {
       this.editFieldChange.emit({ resource, formChangeEvent: event });
+    }
+  }
+
+  onCreateFieldsUpdated(payload: {
+    fields: FormFieldDefinition[];
+    initialValues?: Record<string, unknown>;
+  }): void {
+    this.resolvedCreateFields.set(payload.fields);
+    if (payload.initialValues !== undefined) {
+      this.createDialog()?.patchForm(payload.initialValues, {
+        emitEvent: false,
+      });
+    }
+  }
+
+  onEditFieldsUpdated(payload: {
+    fields: FormFieldDefinition[];
+    initialValues?: Record<string, unknown>;
+  }): void {
+    this.resolvedEditFields.set(payload.fields);
+    if (payload.initialValues !== undefined) {
+      this.editDialog()?.patchForm(payload.initialValues, {
+        emitEvent: false,
+      });
     }
   }
 

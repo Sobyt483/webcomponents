@@ -723,35 +723,10 @@ describe('DeclarativeTableCard', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 8. editInitialValue() computed
+  // 8. editInitialValue removed — edit seeding now goes through the dialog's
+  //    patchForm({ emitEvent: false }) during `openEditDialog`. Covered by
+  //    the `openEditDialog seeds via patchForm` tests below.
   // -------------------------------------------------------------------------
-
-  describe('editInitialValue()', () => {
-    it('returns empty object when pendingResource is null', () => {
-      const { component } = setup({ editConfig: EDIT_CONFIG });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((component as any).editInitialValue()).toEqual({});
-    });
-
-    it('returns empty object when editConfig is not set', () => {
-      const { component } = setup();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((component as any).editInitialValue()).toEqual({});
-    });
-
-    it('builds initial values from pendingResource fields when editConfig is set', async () => {
-      const { component } = setup({ editConfig: EDIT_CONFIG });
-      const resource = RESOURCES[0];
-      // Edit fields are resolved when the edit dialog opens; drive that path.
-      component.onButtonClick(makeEvent('update', resource));
-      await Promise.resolve();
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const values = (component as any).editInitialValue();
-      expect(values['metadata.name']).toBe('pod-alpha');
-      expect(values['metadata.namespace']).toBe('default');
-    });
-  });
 
   // -------------------------------------------------------------------------
   // 9. onButtonClick()
@@ -976,8 +951,156 @@ describe('DeclarativeTableCard', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 10. form state and submit flow
+  // 9.d fieldsUpdated write-back from the dialog — via patchForm delegate
   // -------------------------------------------------------------------------
+
+  describe('fieldsUpdated write-back', () => {
+    const UPDATED_FIELDS: FormFieldDefinition[] = [
+      { name: 'metadata.name', label: 'Name' },
+      {
+        name: 'metadata.namespace',
+        label: 'Namespace',
+        values: ['team-a'],
+      },
+    ];
+
+    /**
+     * Grab a reference to one of the two possible dialogs by data-testid prefix.
+     * The dialog is only rendered when its `*DialogOpen()` signal is true, so
+     * callers must open the right one before resolving.
+     */
+    function dialogByPrefix(
+      fixture: Fixture,
+      prefix: string,
+    ): ResourceFormDialog | null {
+      const dialogs = fixture.debugElement.queryAll(
+        By.directive(ResourceFormDialog),
+      );
+      return (
+        (dialogs.find(
+          (de) =>
+            (de.componentInstance as ResourceFormDialog).dataTestidPrefix() ===
+            prefix,
+        )?.componentInstance as ResourceFormDialog) ?? null
+      );
+    }
+
+    it('onCreateFieldsUpdated writes fields and calls dialog.patchForm({emitEvent:false}) for initialValues', () => {
+      const { fixture, component } = setup({ createConfig: CREATE_CONFIG });
+      // Open the create dialog so the viewChild is populated.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (component as any).createDialogOpen.set(true);
+      fixture.detectChanges();
+
+      const dialog = dialogByPrefix(fixture, 'generic-table-card-create');
+      expect(dialog).not.toBeNull();
+      const spy = vi.spyOn(dialog!, 'patchForm');
+
+      component.onCreateFieldsUpdated({
+        fields: UPDATED_FIELDS,
+        initialValues: { 'metadata.namespace': '' },
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((component as any).resolvedCreateFields()).toEqual(UPDATED_FIELDS);
+      expect(spy).toHaveBeenCalledWith(
+        { 'metadata.namespace': '' },
+        { emitEvent: false },
+      );
+    });
+
+    it('onCreateFieldsUpdated does not call patchForm when payload omits initialValues', () => {
+      const { fixture, component } = setup({ createConfig: CREATE_CONFIG });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (component as any).createDialogOpen.set(true);
+      fixture.detectChanges();
+
+      const dialog = dialogByPrefix(fixture, 'generic-table-card-create');
+      const spy = vi.spyOn(dialog!, 'patchForm');
+
+      component.onCreateFieldsUpdated({ fields: UPDATED_FIELDS });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((component as any).resolvedCreateFields()).toEqual(UPDATED_FIELDS);
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('onEditFieldsUpdated writes fields and calls dialog.patchForm({emitEvent:false}) for initialValues', async () => {
+      const { fixture, component } = setup({ editConfig: EDIT_CONFIG });
+      // Drive openEditDialog so pendingResource + resolvedEditFields are set.
+      component.onButtonClick(makeEvent('update', RESOURCES[0]));
+      await Promise.resolve();
+      fixture.detectChanges();
+
+      const dialog = dialogByPrefix(fixture, 'generic-table-card-edit');
+      expect(dialog).not.toBeNull();
+      const spy = vi.spyOn(dialog!, 'patchForm');
+
+      component.onEditFieldsUpdated({
+        fields: UPDATED_FIELDS,
+        initialValues: { 'metadata.namespace': '' },
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((component as any).resolvedEditFields()).toEqual(UPDATED_FIELDS);
+      expect(spy).toHaveBeenCalledWith(
+        { 'metadata.namespace': '' },
+        { emitEvent: false },
+      );
+    });
+
+    it('onEditFieldsUpdated does not call patchForm when payload omits initialValues', async () => {
+      const { fixture, component } = setup({ editConfig: EDIT_CONFIG });
+      component.onButtonClick(makeEvent('update', RESOURCES[0]));
+      await Promise.resolve();
+      fixture.detectChanges();
+
+      const dialog = dialogByPrefix(fixture, 'generic-table-card-edit');
+      const spy = vi.spyOn(dialog!, 'patchForm');
+
+      component.onEditFieldsUpdated({ fields: UPDATED_FIELDS });
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('regression: openEditDialog seeds via patchForm({emitEvent:false}) on every open', async () => {
+      // The seed path must fire on EACH open (direct patchForm call),
+      // not once per instance.
+      const { fixture, component } = setup({ editConfig: EDIT_CONFIG });
+
+      // First open.
+      component.onButtonClick(makeEvent('update', RESOURCES[0]));
+      await Promise.resolve();
+      fixture.detectChanges();
+      // afterNextRender callbacks schedule after the next change detection pass.
+      await fixture.whenStable();
+
+      let dialog = dialogByPrefix(fixture, 'generic-table-card-edit');
+      expect(dialog).not.toBeNull();
+
+      // Form state reflects the first resource.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let form = (dialog as any).form();
+      expect(form.form.controls['metadata.name']?.value).toBe('pod-alpha');
+
+      // Close and re-open with a different resource.
+      component.closeEditDialog();
+      fixture.detectChanges();
+
+      component.onButtonClick(makeEvent('update', RESOURCES[1]));
+      await Promise.resolve();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      dialog = dialogByPrefix(fixture, 'generic-table-card-edit');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      form = (dialog as any).form();
+      expect(form.form.controls['metadata.name']?.value).toBe('pod-beta');
+      expect(form.form.controls['metadata.namespace']?.value).toBe(
+        'kube-system',
+      );
+    });
+  });
 
   describe('form state and submit flow', () => {
     const fieldChange: FormFieldChangeEvent = {

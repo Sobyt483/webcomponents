@@ -15,8 +15,8 @@
     <mfp-declarative-form
       #form
       [fieldErrors]="fieldErrors()"
-      [fields]="effectiveFields()"
-      [initialValues]="effectiveInitialValues()"
+      [fields]="fields()"
+      [initialValues]="initialValues()"
       (fieldChange)="handleFieldChange($event)"
       (formSubmit)="submitted.emit($event)"
     />

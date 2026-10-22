@@ -4,18 +4,22 @@ import {
   FormFieldDefinition,
   FormFieldErrors,
 } from '../../form/models';
+import { GenericResource } from '../../models';
 import { SanitizeHtmlPipe } from '../../pipes/sanitize-html.pipe';
 import { ResourceFormConfig } from '../../table-card';
 import {
   CUSTOM_ELEMENTS_SCHEMA,
   ChangeDetectionStrategy,
   Component,
+  Injector,
   ViewEncapsulation,
+  afterNextRender,
   computed,
   effect,
+  inject,
   input,
   output,
-  signal,
+  viewChild,
 } from '@angular/core';
 import { Button } from '@fundamental-ngx/ui5-webcomponents/button';
 import { Dialog } from '@fundamental-ngx/ui5-webcomponents/dialog';
@@ -42,39 +46,18 @@ export class ResourceFormDialog {
   readonly dataTestidPrefix = input('generic-table-card-create');
 
   readonly fieldChange = output<FormFieldChangeEvent>();
+  readonly fieldsUpdated = output<{
+    fields: FormFieldDefinition[];
+    initialValues?: Record<string, unknown>;
+  }>();
   readonly submitted = output<Record<string, unknown>>();
   readonly cancelled = output<void>();
 
-  /**
-   * Per-field last-emitted value, used as a last-write-wins race guard around
-   * the async `onFieldChange` hook: if the same field is edited twice in
-   * quick succession, a slower resolver's result is dropped. Strict `!==`
-   * comparison is correct for falsy values (0 / false / ''). Note the
-   * intentional ABA caveat: a value flipped A→B→A while a resolver is in
-   * flight looks "still current" to the first A's handler — harmless here
-   * because the resolver is a pure function of the event value, so the same
-   * input yields the same options.
-   *
-   * Cleared on each new session (open false→true, or config identity change)
-   * so stale resolvers from the previous session cannot land on the new one.
-   */
   private readonly latestValues = new Map<string, unknown>();
 
-  /** Overrides applied by the `onFieldChange` hook; `null` means no override yet. */
-  protected readonly appliedFields = signal<FormFieldDefinition[] | null>(null);
-  protected readonly appliedInitialValues = signal<Record<
-    string,
-    unknown
-  > | null>(null);
+  private readonly injector = inject(Injector);
 
-  /** Fields rendered inside the dialog — override wins over the raw input. */
-  protected readonly effectiveFields = computed(
-    () => this.appliedFields() ?? this.fields(),
-  );
-  /** Initial values pushed into the inner form — override wins over the raw input. */
-  protected readonly effectiveInitialValues = computed(
-    () => this.appliedInitialValues() ?? this.initialValues(),
-  );
+  private readonly form = viewChild<DeclarativeForm<GenericResource>>('form');
 
   protected hasErrors = computed(() => {
     const errors = this.fieldErrors();
@@ -82,42 +65,27 @@ export class ResourceFormDialog {
   });
 
   constructor() {
-    // Reset overrides on each fresh dialog session. Two triggers:
-    //  1. `open` goes false → true (user re-opens the dialog).
-    //  2. `config` identity changes (host swaps which resource is being edited
-    //     without closing the dialog) — otherwise an override applied for
-    //     resource A would linger into resource B's view.
     let prevOpen = this.open();
-    let prevConfig = this.config();
+    // On every `open` toggle, invalidate the race-guard map so in-flight
+    // resolvers from the previous session cannot land on the new one. On
+    // close transitions, additionally reset the inner form so a reopen
+    // starts with empty controls
     effect(() => {
       const currentOpen = this.open();
-      const currentConfig = this.config();
-      const openedNow = !prevOpen && currentOpen;
-      const configSwapped = currentConfig !== prevConfig;
-      if (openedNow || configSwapped) {
-        this.appliedFields.set(null);
-        this.appliedInitialValues.set(null);
-        // Invalidate any in-flight resolver started under the previous session
-        // so its result is dropped when it settles.
-        this.latestValues.clear();
+      this.latestValues.clear();
+      if (prevOpen && !currentOpen) {
+        this.form()?.form.reset({}, { emitEvent: false });
       }
       prevOpen = currentOpen;
-      prevConfig = currentConfig;
     });
   }
 
-  /**
-   * Called when the inner form reports a field change. Re-emits the event for
-   * host observers (preserving the output contract), then runs the config's
-   * `onFieldChange` hook (if any), with a last-write-wins guard so stale
-   * resolver results are dropped.
-   */
   protected async handleFieldChange(
     event: FormFieldChangeEvent,
   ): Promise<void> {
-    // Emit FIRST, synchronously, before any await — hosts rely on this to run
-    // validation or logging as soon as the change arrives.
     this.fieldChange.emit(event);
+
+    if (event.source === 'seed') return;
 
     const onFieldChange = this.config()?.onFieldChange;
     if (!onFieldChange) return;
@@ -126,27 +94,41 @@ export class ResourceFormDialog {
       event.fieldProperty,
       event.value,
     );
-    // Pass the currently-applied fields (not the raw input) so the hook sees
-    // the dialog's view of the world.
-    const result = await onFieldChange(event, this.effectiveFields());
+    const result = await onFieldChange(event, this.fields());
 
     if (!stillCurrent()) return;
     if (result === undefined) return;
 
-    this.appliedFields.set(result.fields);
-    if (result.initialValues !== undefined) {
-      this.appliedInitialValues.set(result.initialValues);
-    }
+    this.fieldsUpdated.emit({
+      fields: result.fields,
+      initialValues: result.initialValues,
+    });
   }
 
-  /**
-   * Records `(key, value)` as the latest-known value for a field, and returns
-   * a closure that reports whether that record is still the latest — i.e.
-   * whether this acquire has NOT been superseded by a later one for the same
-   * key. Used across the `onFieldChange` await to drop stale results.
-   */
   private acquireLatestValue(key: string, value: unknown): () => boolean {
     this.latestValues.set(key, value);
     return () => this.latestValues.get(key) === value;
+  }
+
+  /**
+   * Delegates to {@link DeclarativeForm.patchForm}. Scheduled via
+   * `afterNextRender` so hosts can call this synchronously right after
+   * flipping `open: true` or pushing a new `fields` identity — the actual
+   * write runs after Angular's next CD cycle, by which point the inner
+   * form's `rebuildControls` effect has created the FormGroup entries for
+   * the current fields and `form.patchValue` can land. The silent-seed
+   * path is `patchForm(values, { emitEvent: false })` — matches Angular's
+   * own `setValue(v, { emitEvent: false })` convention.
+   */
+  patchForm(
+    values: Partial<Record<string, unknown>>,
+    options?: { emitEvent?: boolean },
+  ): void {
+    afterNextRender(
+      () => {
+        this.form()?.patchForm(values as Record<string, unknown>, options);
+      },
+      { injector: this.injector },
+    );
   }
 }

@@ -8,6 +8,7 @@ import { coerceBoolean } from '../utils/coerce-boolean';
 import { setPropertyByPath } from '../utils/set-property-by-path';
 import { FormCollectionField } from './form-collection-field/form-collection-field.component';
 import {
+  ChangeDetectorRef,
   Component,
   ViewEncapsulation,
   effect,
@@ -52,6 +53,15 @@ export class DeclarativeForm<T extends GenericResource> {
   readonly initialValues = input<T>({} as T);
   readonly fieldErrors = input<FormFieldErrors>({});
 
+  /**
+   * Emitted on user interaction with a validated field (change/blur/switch/
+   * collection) with `source: 'user'`, and on every `[initialValues]` input
+   * identity push for every validated field with `source: 'seed'`. Mirrors
+   * Angular's `AbstractControl.setValue(v, { emitEvent })` convention: the
+   * input binding is the "emit" path, {@link patchForm} is the "silent"
+   * path. Consumers distinguishing user changes from seeds (e.g. dependent
+   * resolvers) must gate on `source`.
+   */
   readonly fieldChange = output<FormFieldChangeEvent>();
   readonly formSubmit = output<T>();
   readonly formValueChange = output<Record<string, unknown>>();
@@ -64,9 +74,8 @@ export class DeclarativeForm<T extends GenericResource> {
 
   private readonly passwordVisible = signal<Record<string, boolean>>({});
 
-  private readonly lastEmittedValue = new Map<string, unknown>();
-
   private readonly fb = inject(FormBuilder);
+  private readonly cdr = inject(ChangeDetectorRef);
 
   constructor() {
     this.form = this.fb.group({});
@@ -80,22 +89,44 @@ export class DeclarativeForm<T extends GenericResource> {
     });
 
     effect(() => {
-      const fields = this.fields();
       this.initialValues();
-
-      for (const field of fields) {
-        if (field.validation) {
-          const current = this.form.controls[field.name]?.value ?? '';
-          if (this.lastEmittedValue.get(field.name) !== current) {
-            this.lastEmittedValue.set(field.name, current);
-            this.fieldChange.emit({
-              fieldProperty: field.name,
-              value: current,
-            });
-          }
-        }
-      }
+      untracked(() => {
+        this.seedValidationFields();
+      });
     });
+  }
+
+  /**
+   * Programmatically seed the form's values.
+   *
+   * When `emitEvent` is false, {@link fieldChange} is NOT fired for the seeded
+   * values — useful when the host is reloading an existing resource (edit
+   * open) and does not want dependent-field resolvers to interpret the seeded
+   * parent as a user change (which would trigger a self-clear).
+   *
+   * When `emitEvent` is omitted or `true` (default), behavior matches an
+   * `[initialValues]` input push: `fieldChange` fires once for every
+   * validation field with its resulting control value.
+   */
+  patchForm(values: Partial<T>, options?: { emitEvent?: boolean }): void {
+    this.setInitialValues(values as T);
+    if (options?.emitEvent !== false) {
+      this.seedValidationFields();
+    }
+    this.cdr.markForCheck();
+  }
+
+  private seedValidationFields(): void {
+    for (const field of this.fields()) {
+      if (!field.validation) continue;
+      const control = this.form.controls[field.name];
+      if (!control) continue;
+      this.fieldChange.emit({
+        fieldProperty: field.name,
+        value: control.value,
+        source: 'seed',
+      });
+    }
   }
 
   setFormControlValue($event: Event, field: FormFieldDefinition): void {
@@ -110,10 +141,10 @@ export class DeclarativeForm<T extends GenericResource> {
     this.formValueChange.emit(this.form.value as Record<string, unknown>);
 
     if (field.validation === 'onChange') {
-      this.lastEmittedValue.set(field.name, control.value);
       this.fieldChange.emit({
         fieldProperty: field.name,
         value: control.value,
+        source: 'user',
       });
     }
   }
@@ -129,10 +160,10 @@ export class DeclarativeForm<T extends GenericResource> {
     this.formValueChange.emit(this.form.value as Record<string, unknown>);
 
     if (field.validation === 'onChange') {
-      this.lastEmittedValue.set(field.name, checked);
       this.fieldChange.emit({
         fieldProperty: field.name,
         value: checked,
+        source: 'user',
       });
     }
   }
@@ -189,6 +220,7 @@ export class DeclarativeForm<T extends GenericResource> {
       this.fieldChange.emit({
         fieldProperty: field.name,
         value: entries,
+        source: 'user',
       });
     }
   }
@@ -209,10 +241,10 @@ export class DeclarativeForm<T extends GenericResource> {
 
     if (field.validation === 'onBlur') {
       const value = this.form.controls[field.name]?.value;
-      this.lastEmittedValue.set(field.name, value);
       this.fieldChange.emit({
         fieldProperty: field.name,
         value,
+        source: 'user',
       });
     }
   }
@@ -276,8 +308,6 @@ export class DeclarativeForm<T extends GenericResource> {
     this.form.patchValue(normalizedValues, { emitEvent: false });
     this.form.markAsPristine({ emitEvent: false });
     this.form.updateValueAndValidity({ emitEvent: false });
-
-    this.markSuppliedValidationFieldsAsAlreadyEmitted(initialValues);
   }
 
   private rebuildCollectionArrays(initialValues: T): void {
@@ -325,19 +355,6 @@ export class DeclarativeForm<T extends GenericResource> {
       }
     }
     return normalizedValues;
-  }
-
-  private markSuppliedValidationFieldsAsAlreadyEmitted(initialValues: T): void {
-    for (const field of this.fields()) {
-      if (!this.hasKey(initialValues, field.name)) {
-        continue;
-      }
-      const control = this.form.controls[field.name];
-      if (!control) {
-        continue;
-      }
-      this.lastEmittedValue.set(field.name, control.value);
-    }
   }
 
   private hasKey(obj: unknown, name: string): boolean {

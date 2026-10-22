@@ -558,7 +558,7 @@ describe('DeclarativeForm', () => {
       );
 
       expect(emitted).toEqual([
-        { fieldProperty: 'metadata.name', value: 'new-value' },
+        { fieldProperty: 'metadata.name', value: 'new-value', source: 'user' },
       ]);
     });
 
@@ -589,7 +589,11 @@ describe('DeclarativeForm', () => {
       component.onFieldBlur(onBlurField);
 
       expect(emitted).toEqual([
-        { fieldProperty: 'metadata.namespace', value: 'kube-system' },
+        {
+          fieldProperty: 'metadata.namespace',
+          value: 'kube-system',
+          source: 'user',
+        },
       ]);
     });
 
@@ -642,7 +646,9 @@ describe('DeclarativeForm', () => {
         switchField,
       );
 
-      expect(emitted).toEqual([{ fieldProperty: 'spec.enabled', value: true }]);
+      expect(emitted).toEqual([
+        { fieldProperty: 'spec.enabled', value: true, source: 'user' },
+      ]);
       expect(component.form.controls['spec.enabled'].value).toBe(true);
     });
 
@@ -687,7 +693,9 @@ describe('DeclarativeForm', () => {
 
       component.onFieldBlur(switchField);
 
-      expect(emitted).toEqual([{ fieldProperty: 'spec.enabled', value: true }]);
+      expect(emitted).toEqual([
+        { fieldProperty: 'spec.enabled', value: true, source: 'user' },
+      ]);
     });
 
     it('should emit formValueChange when a switch is toggled', () => {
@@ -709,36 +717,152 @@ describe('DeclarativeForm', () => {
 
       expect(emitted).toEqual([{ 'spec.enabled': true }]);
     });
+  });
 
-    it('should NOT emit fieldChange for validated fields that were seeded via initialValues (edit-open self-clear regression)', () => {
-      // Opening an EDIT dialog pushes prefilled initialValues for a validation
-      // field. The old (buggy) behavior re-emitted those seeded values via the
-      // seeding effect, which the downstream host interpreted as a user change
-      // and reacted to by clearing any dependents. Treat initialValues as
-      // seeding, not a user change — no emit for supplied keys on open.
+  describe('fieldChange source tagging', () => {
+    // The `source` field distinguishes user interactions (`'user'`) from seed
+    // echoes (`'seed'`) that fire when `initialValues` identity changes or
+    // when `patchForm({ emitEvent: true })` is called. Downstream consumers
+    // (notably the dialog's `onFieldChange` hook) drop seed echoes so a
+    // prefilled parent on edit-open does not trigger dependent clearing.
+
+    it('tags setFormControlValue emits with source: user', () => {
       const emitted: FormFieldChangeEvent[] = [];
-      component.fieldChange.subscribe((event) => emitted.push(event));
+      component.fieldChange.subscribe((e) => emitted.push(e));
 
-      fixture.componentRef.setInput('initialValues', {
-        'metadata.name': 'my-resource',
-        'metadata.namespace': 'ns-value',
-      });
+      const onChangeField = testFields.find((f) => f.name === 'metadata.name')!;
+      component.setFormControlValue(
+        { target: { value: 'typed' } } as unknown as Event,
+        onChangeField,
+      );
+
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0].source).toBe('user');
+    });
+
+    it('tags setSwitchValue emits with source: user', () => {
+      const switchField: FormFieldDefinition = {
+        name: 'spec.enabled',
+        label: 'Enabled',
+        inputType: 'Switch',
+        validation: 'onChange',
+      };
+      fixture.componentRef.setInput('fields', [switchField]);
       fixture.detectChanges();
 
-      expect(
-        emitted.find((e) => e.fieldProperty === 'metadata.name'),
-      ).toBeUndefined();
-      expect(
-        emitted.find((e) => e.fieldProperty === 'metadata.namespace'),
-      ).toBeUndefined();
-      expect(
-        emitted.find((e) => e.fieldProperty === 'metadata.labels'),
-      ).toBeUndefined();
+      const emitted: FormFieldChangeEvent[] = [];
+      component.fieldChange.subscribe((e) => emitted.push(e));
+
+      component.setSwitchValue(
+        { target: { checked: true } } as unknown as Event,
+        switchField,
+      );
+
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0].source).toBe('user');
+    });
+
+    it('tags onFieldBlur emits with source: user', () => {
+      const emitted: FormFieldChangeEvent[] = [];
+      component.fieldChange.subscribe((e) => emitted.push(e));
+
+      const onBlurField = testFields.find(
+        (f) => f.name === 'metadata.namespace',
+      )!;
+      component.onFieldBlur(onBlurField);
+
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0].source).toBe('user');
+    });
+
+    it('tags onCollectionValueChange emits with source: user', () => {
+      const collectionField: FormFieldDefinition = {
+        name: 'spec.rules',
+        label: 'Rules',
+        validation: 'onChange',
+        propertyCollection: [{ name: 'host', label: 'Host' }],
+      };
+      fixture.componentRef.setInput('fields', [collectionField]);
+      fixture.detectChanges();
+
+      const emitted: FormFieldChangeEvent[] = [];
+      component.fieldChange.subscribe((e) => emitted.push(e));
+
+      component.onCollectionValueChange(collectionField, [{ host: 'a.com' }]);
+
+      expect(emitted).toHaveLength(1);
+      expect(emitted[0].source).toBe('user');
+    });
+
+    it('tags seedValidationFields emits with source: seed (input identity push)', () => {
+      const localFixture = TestBed.createComponent(DeclarativeForm);
+      const localComponent = localFixture.componentInstance;
+
+      const emitted: FormFieldChangeEvent[] = [];
+      localComponent.fieldChange.subscribe((e) => emitted.push(e));
+
+      localFixture.componentRef.setInput('fields', testFields);
+      localFixture.componentRef.setInput('initialValues', {
+        'metadata.name': 'seeded',
+      });
+      localFixture.detectChanges();
+
+      // All seed emits carry source: 'seed'.
+      expect(emitted.length).toBeGreaterThan(0);
+      for (const e of emitted) {
+        expect(e.source).toBe('seed');
+      }
+    });
+
+    it('tags patchForm({ emitEvent: true }) emits with source: seed', () => {
+      const localFixture = TestBed.createComponent(DeclarativeForm);
+      const localComponent = localFixture.componentInstance;
+      localFixture.componentRef.setInput('fields', testFields);
+      localFixture.componentRef.setInput('initialValues', {});
+      localFixture.detectChanges();
+
+      const emitted: FormFieldChangeEvent[] = [];
+      localComponent.fieldChange.subscribe((e) => emitted.push(e));
+
+      localComponent.patchForm(
+        { 'metadata.name': 'via-patch' } as GenericResource,
+        { emitEvent: true },
+      );
+
+      expect(emitted.length).toBeGreaterThan(0);
+      for (const e of emitted) {
+        expect(e.source).toBe('seed');
+      }
+    });
+
+    it('does not emit at all when patchForm({ emitEvent: false }) is used (unchanged)', () => {
+      const localFixture = TestBed.createComponent(DeclarativeForm);
+      const localComponent = localFixture.componentInstance;
+      localFixture.componentRef.setInput('fields', testFields);
+      localFixture.componentRef.setInput('initialValues', {});
+      localFixture.detectChanges();
+
+      const emitted: FormFieldChangeEvent[] = [];
+      localComponent.fieldChange.subscribe((e) => emitted.push(e));
+
+      localComponent.patchForm(
+        { 'metadata.name': 'silent' } as GenericResource,
+        { emitEvent: false },
+      );
+
+      expect(emitted).toEqual([]);
     });
   });
 
-  describe('initial emission', () => {
-    it('should emit fieldChange for fields with validation on init', () => {
+  describe('initial seeding emission', () => {
+    // Contract: on every `initialValues` input identity push, `fieldChange`
+    // is emitted ONCE per validation field with its resulting control value.
+    // This mirrors Angular's own `AbstractControl.setValue(v, { emitEvent })`:
+    // the input binding is the "emit" path; the imperative `patchForm` method
+    // is the "silent" path for hosts that need to seed without echoing a
+    // user-change-shaped event (edit-open self-clear prevention).
+
+    it('emits once for each validation field with the resulting control value (seeded or empty)', () => {
       const localFixture = TestBed.createComponent(DeclarativeForm);
       const localComponent = localFixture.componentInstance;
 
@@ -746,29 +870,353 @@ describe('DeclarativeForm', () => {
       localComponent.fieldChange.subscribe((event) => emitted.push(event));
 
       localFixture.componentRef.setInput('fields', testFields);
+      localFixture.componentRef.setInput('initialValues', {
+        'metadata.name': 'seeded-name',
+      });
       localFixture.detectChanges();
 
-      expect(emitted).toEqual(
-        expect.arrayContaining([
-          { fieldProperty: 'metadata.name', value: '' },
-          { fieldProperty: 'metadata.namespace', value: '' },
-        ]),
-      );
-    });
-
-    it('should not emit fieldChange for fields without validation on init', () => {
-      const localFixture = TestBed.createComponent(DeclarativeForm);
-      const localComponent = localFixture.componentInstance;
-
-      const emitted: FormFieldChangeEvent[] = [];
-      localComponent.fieldChange.subscribe((event) => emitted.push(event));
-
-      localFixture.componentRef.setInput('fields', testFields);
-      localFixture.detectChanges();
-
+      // metadata.name has validation + prefilled value → emits seeded value.
+      expect(
+        emitted.filter((e) => e.fieldProperty === 'metadata.name'),
+      ).toEqual([
+        {
+          fieldProperty: 'metadata.name',
+          value: 'seeded-name',
+          source: 'seed',
+        },
+      ]);
+      // metadata.namespace has validation but NO prefilled value → emits ''.
+      expect(
+        emitted.filter((e) => e.fieldProperty === 'metadata.namespace'),
+      ).toEqual([
+        {
+          fieldProperty: 'metadata.namespace',
+          value: '',
+          source: 'seed',
+        },
+      ]);
+      // metadata.labels has no `validation` → never emits from seeding.
       expect(
         emitted.find((e) => e.fieldProperty === 'metadata.labels'),
       ).toBeUndefined();
+    });
+
+    it('patchForm with emitEvent:false does not re-emit on a subsequent push (loop-breaker)', () => {
+      // Critical loop-breaker — the real mechanism now. Host sees a parent
+      // emit, resolves dependents, and must apply the result WITHOUT echoing
+      // a seed. The dialog applies the result via `patchForm({ emitEvent:
+      // false })`, which bypasses the input signal entirely → no re-emit.
+      const localFixture = TestBed.createComponent(DeclarativeForm);
+      const localComponent = localFixture.componentInstance;
+
+      const emitted: FormFieldChangeEvent[] = [];
+      localComponent.fieldChange.subscribe((event) => emitted.push(event));
+
+      localFixture.componentRef.setInput('fields', testFields);
+      // First input push → emits once per validation field.
+      localFixture.componentRef.setInput('initialValues', {});
+      localFixture.detectChanges();
+
+      const firstCount = emitted.length;
+      expect(firstCount).toBeGreaterThan(0);
+
+      // Silent re-seed via patchForm — must NOT re-emit.
+      localComponent.patchForm(
+        { 'metadata.name': 'second' } as GenericResource,
+        { emitEvent: false },
+      );
+
+      expect(emitted.length).toBe(firstCount);
+      expect(localComponent.form.controls['metadata.name'].value).toBe(
+        'second',
+      );
+    });
+
+    it('does not emit on a bare fields() identity change (no setInitialValues)', () => {
+      const localFixture = TestBed.createComponent(DeclarativeForm);
+      const localComponent = localFixture.componentInstance;
+
+      localFixture.componentRef.setInput('fields', testFields);
+      // Trigger the first initialValues emission (default is {}).
+      localFixture.componentRef.setInput('initialValues', {});
+      localFixture.detectChanges();
+
+      const emitted: FormFieldChangeEvent[] = [];
+      localComponent.fieldChange.subscribe((event) => emitted.push(event));
+
+      // Push a NEW fields array identity without touching initialValues.
+      localFixture.componentRef.setInput('fields', [...testFields]);
+      localFixture.detectChanges();
+
+      expect(emitted).toEqual([]);
+    });
+
+    it('still fires user-driven emits after seeding', () => {
+      const localFixture = TestBed.createComponent(DeclarativeForm);
+      const localComponent = localFixture.componentInstance;
+
+      const field: FormFieldDefinition = {
+        name: 'metadata.name',
+        label: 'Name',
+        validation: 'onChange',
+      };
+      localFixture.componentRef.setInput('fields', [field]);
+      localFixture.componentRef.setInput('initialValues', {
+        'metadata.name': 'seeded',
+      });
+      localFixture.detectChanges();
+
+      const emitted: FormFieldChangeEvent[] = [];
+      localComponent.fieldChange.subscribe((event) => emitted.push(event));
+
+      // User types a new value.
+      localComponent.setFormControlValue(
+        { target: { value: 'user-typed' } } as unknown as Event,
+        field,
+      );
+
+      expect(emitted).toEqual([
+        {
+          fieldProperty: 'metadata.name',
+          value: 'user-typed',
+          source: 'user',
+        },
+      ]);
+
+      // Silent re-seed via patchForm — must NOT re-emit on top.
+      localComponent.patchForm(
+        { 'metadata.name': 'user-typed' } as GenericResource,
+        { emitEvent: false },
+      );
+
+      expect(emitted).toEqual([
+        {
+          fieldProperty: 'metadata.name',
+          value: 'user-typed',
+          source: 'user',
+        },
+      ]);
+    });
+
+    it('settles on repeated host-driven patchForm pushes (no loop)', { timeout: 2000 }, () => {
+      // Guards the parent↔dependent loop at the DeclarativeForm layer: a host
+      // that reacts to an emit by applying fresh values via `patchForm({
+      // emitEvent: false })` must NOT trigger another emit from the form. The
+      // 2s timeout fails fast if a regression reintroduced the loop.
+      const dependencyFields: FormFieldDefinition[] = [
+        {
+          name: 'metadata.namespace',
+          label: 'Namespace',
+          validation: 'onBlur',
+        },
+        {
+          name: 'spec.dependentSelect',
+          label: 'Dependent select',
+          validation: 'onChange',
+        },
+      ];
+
+      const localFixture = TestBed.createComponent(DeclarativeForm);
+      const localComponent = localFixture.componentInstance;
+
+      const emitted: FormFieldChangeEvent[] = [];
+      localComponent.fieldChange.subscribe((event) => emitted.push(event));
+
+      localFixture.componentRef.setInput('fields', dependencyFields);
+      // Initial input push — emits once for each validation field.
+      localFixture.componentRef.setInput('initialValues', {});
+      localFixture.detectChanges();
+
+      const seedCount = emitted.length;
+      expect(seedCount).toBe(2);
+
+      // Host responds by applying new values via silent patchForm. No further
+      // emit must happen.
+      localComponent.patchForm(
+        {
+          'metadata.namespace': 'team-a',
+          'spec.dependentSelect': '',
+        } as GenericResource,
+        { emitEvent: false },
+      );
+      // And again, to make sure repeated silent writes don't accumulate emits.
+      localComponent.patchForm(
+        {
+          'metadata.namespace': 'team-b',
+          'spec.dependentSelect': '',
+        } as GenericResource,
+        { emitEvent: false },
+      );
+
+      expect(emitted.length).toBe(seedCount);
+    });
+
+    it('re-emits on EVERY input identity push (restored library-wide contract)', () => {
+      // Guards the restored contract: a NEW `[initialValues]` identity push
+      // (as happens on re-open or on programmatic seed through the input)
+      // must re-fire the seeding effect. This is intentional — hosts opt out
+      // of seed-emits by using `patchForm({ emitEvent: false })` instead of
+      // pushing through the input.
+      const localFixture = TestBed.createComponent(DeclarativeForm);
+      const localComponent = localFixture.componentInstance;
+
+      const emitted: FormFieldChangeEvent[] = [];
+      localComponent.fieldChange.subscribe((event) => emitted.push(event));
+
+      localFixture.componentRef.setInput('fields', testFields);
+      localFixture.componentRef.setInput('initialValues', {});
+      localFixture.detectChanges();
+      const firstCount = emitted.length;
+
+      // Second input push, new identity → re-emits.
+      localFixture.componentRef.setInput('initialValues', {
+        'metadata.name': 'second',
+      });
+      localFixture.detectChanges();
+
+      expect(emitted.length).toBeGreaterThan(firstCount);
+      expect(
+        emitted
+          .filter((e) => e.fieldProperty === 'metadata.name')
+          .pop()?.value,
+      ).toBe('second');
+    });
+  });
+
+  describe('patchForm', () => {
+    // Mirrors Angular's `AbstractControl.setValue(v, { emitEvent })` pattern.
+    // The default (no options) emits; `{ emitEvent: false }` is the silent
+    // path for hosts that know their write is NOT a user-change event.
+
+    it('calls setInitialValues AND emits fieldChange when options are omitted', () => {
+      const localFixture = TestBed.createComponent(DeclarativeForm);
+      const localComponent = localFixture.componentInstance;
+      localFixture.componentRef.setInput('fields', testFields);
+      localFixture.componentRef.setInput('initialValues', {});
+      localFixture.detectChanges();
+
+      const emitted: FormFieldChangeEvent[] = [];
+      localComponent.fieldChange.subscribe((event) => emitted.push(event));
+
+      localComponent.patchForm({
+        'metadata.name': 'via-patch',
+        'metadata.namespace': 'ns-a',
+      } as GenericResource);
+
+      expect(localComponent.form.controls['metadata.name'].value).toBe(
+        'via-patch',
+      );
+      expect(localComponent.form.controls['metadata.namespace'].value).toBe(
+        'ns-a',
+      );
+      // One emit per validation field.
+      expect(emitted).toEqual([
+        { fieldProperty: 'metadata.name', value: 'via-patch', source: 'seed' },
+        { fieldProperty: 'metadata.namespace', value: 'ns-a', source: 'seed' },
+      ]);
+    });
+
+    it('calls setInitialValues AND emits fieldChange when options.emitEvent is true', () => {
+      const localFixture = TestBed.createComponent(DeclarativeForm);
+      const localComponent = localFixture.componentInstance;
+      localFixture.componentRef.setInput('fields', testFields);
+      localFixture.componentRef.setInput('initialValues', {});
+      localFixture.detectChanges();
+
+      const emitted: FormFieldChangeEvent[] = [];
+      localComponent.fieldChange.subscribe((event) => emitted.push(event));
+
+      localComponent.patchForm(
+        { 'metadata.name': 'via-patch' } as GenericResource,
+        { emitEvent: true },
+      );
+
+      expect(emitted.length).toBeGreaterThan(0);
+    });
+
+    it('calls setInitialValues but does NOT emit fieldChange when options.emitEvent is false', () => {
+      const localFixture = TestBed.createComponent(DeclarativeForm);
+      const localComponent = localFixture.componentInstance;
+      localFixture.componentRef.setInput('fields', testFields);
+      localFixture.componentRef.setInput('initialValues', {});
+      localFixture.detectChanges();
+
+      const emitted: FormFieldChangeEvent[] = [];
+      localComponent.fieldChange.subscribe((event) => emitted.push(event));
+
+      localComponent.patchForm(
+        { 'metadata.name': 'silent' } as GenericResource,
+        { emitEvent: false },
+      );
+
+      expect(localComponent.form.controls['metadata.name'].value).toBe(
+        'silent',
+      );
+      expect(emitted).toEqual([]);
+    });
+
+    it('patchForm with emitEvent:false on a prefilled parent + dependent does not emit (edit-open self-clear fix)', () => {
+      // Direct regression test for the edit-open self-clear bug: when the
+      // host supplies all validation fields with real values (edit of an
+      // existing resource) THROUGH patchForm (not the input), the form must
+      // stay silent — any `dependsOn` consumer must not interpret the seeded
+      // parent as a user change.
+      const localFixture = TestBed.createComponent(DeclarativeForm);
+      const localComponent = localFixture.componentInstance;
+
+      const emitted: FormFieldChangeEvent[] = [];
+      localComponent.fieldChange.subscribe((event) => emitted.push(event));
+
+      localFixture.componentRef.setInput('fields', testFields);
+      // Keep the input empty — the host will drive seeding via patchForm.
+      localFixture.componentRef.setInput('initialValues', {});
+      localFixture.detectChanges();
+      emitted.length = 0; // ignore the initial input-driven seed
+
+      localComponent.patchForm(
+        {
+          'metadata.name': 'my-resource',
+          'metadata.namespace': 'my-ns',
+        } as GenericResource,
+        { emitEvent: false },
+      );
+
+      // No emit at all — the silent write seeded both validation fields.
+      expect(emitted).toEqual([]);
+    });
+
+    it('still emits on a user interaction AFTER a silent patchForm', () => {
+      const localFixture = TestBed.createComponent(DeclarativeForm);
+      const localComponent = localFixture.componentInstance;
+      const field: FormFieldDefinition = {
+        name: 'metadata.name',
+        label: 'Name',
+        validation: 'onChange',
+      };
+      localFixture.componentRef.setInput('fields', [field]);
+      localFixture.componentRef.setInput('initialValues', {});
+      localFixture.detectChanges();
+
+      localComponent.patchForm(
+        { 'metadata.name': 'seeded' } as GenericResource,
+        { emitEvent: false },
+      );
+
+      const emitted: FormFieldChangeEvent[] = [];
+      localComponent.fieldChange.subscribe((event) => emitted.push(event));
+
+      localComponent.setFormControlValue(
+        { target: { value: 'user-typed' } } as unknown as Event,
+        field,
+      );
+
+      expect(emitted).toEqual([
+        {
+          fieldProperty: 'metadata.name',
+          value: 'user-typed',
+          source: 'user',
+        },
+      ]);
     });
   });
 
@@ -888,324 +1336,6 @@ describe('DeclarativeForm', () => {
     });
   });
 
-  describe('fieldChange dedupe (loop prevention)', () => {
-    // A downstream host responds to a parent-field fieldChange by pushing a NEW
-    // `fields` array + NEW `initialValues` object. That input change re-runs the
-    // seeding effect. Without the dedupe the effect re-emits the parent field
-    // with its UNCHANGED value, the host re-resolves and pushes again, and the
-    // loop never terminates (endless gql). A reintroduced loop would emit an
-    // unbounded number of times, so we assert a BOUNDED emit count. The 2s
-    // per-test timeout makes a reintroduced loop fail fast rather than pin CPU.
-
-    const dependencyFields: FormFieldDefinition[] = [
-      // Parent field (user drives this). onBlur matches the real dependent-field
-      // feature, where the namespace parent is validated on blur.
-      {
-        name: 'metadata.namespace',
-        label: 'Namespace',
-        validation: 'onBlur',
-      },
-      // Dependent field cleared by the host when the parent changes.
-      {
-        name: 'spec.dependentSelect',
-        label: 'Dependent select',
-        validation: 'onChange',
-      },
-    ];
-
-    it('does not re-emit the parent field when the host pushes new fields with the same value', { timeout: 2000 }, () => {
-      const localFixture = TestBed.createComponent(DeclarativeForm);
-      const localComponent = localFixture.componentInstance;
-
-      localFixture.componentRef.setInput('fields', dependencyFields);
-      localFixture.detectChanges();
-
-      // Drain the initial seeding emits (value '' for both validated fields).
-      const emitted: FormFieldChangeEvent[] = [];
-      localComponent.fieldChange.subscribe((event) => emitted.push(event));
-
-      // User changes the parent (namespace) and blurs it -> one genuine emit.
-      localComponent.form.controls['metadata.namespace'].setValue('team-a');
-      const namespaceField = dependencyFields[0];
-      localComponent.onFieldBlur(namespaceField);
-
-      expect(emitted).toEqual([
-        { fieldProperty: 'metadata.namespace', value: 'team-a' },
-      ]);
-
-      // The host responds to that emit by pushing a NEW fields array + NEW
-      // initialValues object (new identities) that carry the SAME namespace
-      // value and clear the dependent field. This re-runs the seeding effect.
-      localFixture.componentRef.setInput('fields', [...dependencyFields]);
-      localFixture.componentRef.setInput('initialValues', {
-        'metadata.namespace': 'team-a',
-        'spec.dependentSelect': '',
-      });
-      localFixture.detectChanges();
-
-      // WITHOUT the dedupe the effect echoes namespace=team-a, the host pushes
-      // again, and this explodes without bound. WITH the dedupe the parent is
-      // recognised as already-emitted and is NOT echoed. The dependent field
-      // was seeded at '' initially and is still '' -> also not re-emitted. So
-      // the host push adds nothing.
-      expect(
-        emitted.filter((e) => e.fieldProperty === 'metadata.namespace').length,
-      ).toBe(1);
-      expect(
-        emitted.filter((e) => e.fieldProperty === 'spec.dependentSelect')
-          .length,
-      ).toBe(0);
-      // Bounded total: exactly the single genuine user emit.
-      expect(emitted.length).toBe(1);
-    });
-
-    it('does not re-emit a dependent cleared via a host-driven initialValues push', { timeout: 2000 }, () => {
-      // Treat the host-driven initialValues push as seeding, not a user
-      // change: when the host clears a dependent in response to a parent
-      // change, the dependent must NOT emit fieldChange from the seeding
-      // effect. User-driven changes still emit via setFormControlValue /
-      // setSwitchValue / onFieldBlur; programmatic pushes do not.
-      const localFixture = TestBed.createComponent(DeclarativeForm);
-      const localComponent = localFixture.componentInstance;
-
-      localFixture.componentRef.setInput('fields', dependencyFields);
-      localFixture.componentRef.setInput('initialValues', {
-        'spec.dependentSelect': 'prefilled',
-      });
-      localFixture.detectChanges();
-
-      const emitted: FormFieldChangeEvent[] = [];
-      localComponent.fieldChange.subscribe((event) => emitted.push(event));
-
-      // User changes the parent and blurs it.
-      localComponent.form.controls['metadata.namespace'].setValue('team-b');
-      localComponent.onFieldBlur(dependencyFields[0]);
-
-      // Host responds: same namespace, dependent CLEARED (prefilled -> '').
-      localFixture.componentRef.setInput('fields', [...dependencyFields]);
-      localFixture.componentRef.setInput('initialValues', {
-        'metadata.namespace': 'team-b',
-        'spec.dependentSelect': '',
-      });
-      localFixture.detectChanges();
-
-      // Parent emits once (user). Dependent cleared via programmatic push ->
-      // seeded, so NO emit from the effect.
-      expect(
-        emitted.filter((e) => e.fieldProperty === 'metadata.namespace').length,
-      ).toBe(1);
-      expect(
-        emitted.filter((e) => e.fieldProperty === 'spec.dependentSelect')
-          .length,
-      ).toBe(0);
-      expect(emitted.length).toBe(1);
-    });
-
-    it('does not emit for a programmatic initialValues push even when the value changes', { timeout: 2000 }, () => {
-      // Programmatic initialValues pushes are treated as seeding, not user
-      // changes. Even successive pushes with different values do NOT emit
-      // fieldChange — only user-driven setFormControlValue / setSwitchValue /
-      // onFieldBlur calls emit.
-      const localFixture = TestBed.createComponent(DeclarativeForm);
-      const localComponent = localFixture.componentInstance;
-
-      localFixture.componentRef.setInput('fields', dependencyFields);
-      localFixture.detectChanges();
-
-      const emitted: FormFieldChangeEvent[] = [];
-      localComponent.fieldChange.subscribe((event) => emitted.push(event));
-
-      // Host pushes a value via initialValues.
-      localFixture.componentRef.setInput('initialValues', {
-        'metadata.namespace': 'first',
-      });
-      localFixture.detectChanges();
-
-      // Host pushes a different value via initialValues.
-      localFixture.componentRef.setInput('initialValues', {
-        'metadata.namespace': 'second',
-      });
-      localFixture.detectChanges();
-
-      expect(
-        emitted.filter((e) => e.fieldProperty === 'metadata.namespace'),
-      ).toEqual([]);
-      // The control reflects the pushed value even though no emit fired.
-      expect(
-        localComponent.form.controls['metadata.namespace'].value,
-      ).toBe('second');
-    });
-
-    it('seeds each validation field exactly once on initial open', { timeout: 2000 }, () => {
-      const localFixture = TestBed.createComponent(DeclarativeForm);
-      const localComponent = localFixture.componentInstance;
-
-      const emitted: FormFieldChangeEvent[] = [];
-      localComponent.fieldChange.subscribe((event) => emitted.push(event));
-
-      localFixture.componentRef.setInput('fields', dependencyFields);
-      localFixture.detectChanges();
-
-      expect(
-        emitted.filter((e) => e.fieldProperty === 'metadata.namespace').length,
-      ).toBe(1);
-      expect(
-        emitted.filter((e) => e.fieldProperty === 'spec.dependentSelect')
-          .length,
-      ).toBe(1);
-    });
-  });
-
-  describe('edit-open self-clear regression (initialValues treated as seeding)', () => {
-    // Opening an EDIT dialog pushes prefilled initialValues for a parent
-    // namespace field and a dependent select field. The old (buggy) seeding
-    // effect emitted the parent on open — downstream host interpreted that as
-    // a user change, resolved the dependents, and pushed a new initialValues
-    // that wiped them. Treat the open-time push as seeding so the parent does
-    // NOT emit on open and the dependents keep their prefilled values.
-
-    const parentChildFields: FormFieldDefinition[] = [
-      {
-        name: 'metadata.namespace',
-        label: 'Namespace',
-        validation: 'onChange',
-      },
-      {
-        name: 'spec.dependentSelect',
-        label: 'Dependent select',
-        validation: 'onChange',
-      },
-    ];
-
-    it('does NOT emit fieldChange for a prefilled parent (nor its dependent) on edit-open', { timeout: 2000 }, () => {
-      const localFixture = TestBed.createComponent(DeclarativeForm);
-      const localComponent = localFixture.componentInstance;
-
-      const emitted: FormFieldChangeEvent[] = [];
-      localComponent.fieldChange.subscribe((event) => emitted.push(event));
-
-      // Simulate opening an edit dialog: fields + prefilled values pushed
-      // together in one effect flush.
-      localFixture.componentRef.setInput('fields', parentChildFields);
-      localFixture.componentRef.setInput('initialValues', {
-        'metadata.namespace': 'team-a',
-        'spec.dependentSelect': 'saved-value',
-      });
-      localFixture.detectChanges();
-
-      // Neither the parent nor the dependent should emit on open — both
-      // values arrived via initialValues (seeding).
-      expect(
-        emitted.filter((e) => e.fieldProperty === 'metadata.namespace'),
-      ).toEqual([]);
-      expect(
-        emitted.filter((e) => e.fieldProperty === 'spec.dependentSelect'),
-      ).toEqual([]);
-    });
-
-    it('still emits seeding for empty-value validation fields on create (no initialValues supplied)', { timeout: 2000 }, () => {
-      // Create path: initialValues is {} and the field defaults to ''. The
-      // seeding emit is intentionally preserved so a required field can be
-      // validated on open.
-      const localFixture = TestBed.createComponent(DeclarativeForm);
-      const localComponent = localFixture.componentInstance;
-
-      const emitted: FormFieldChangeEvent[] = [];
-      localComponent.fieldChange.subscribe((event) => emitted.push(event));
-
-      localFixture.componentRef.setInput('fields', [
-        {
-          name: 'metadata.name',
-          label: 'Name',
-          required: true,
-          validation: 'onChange',
-        },
-      ]);
-      localFixture.componentRef.setInput('initialValues', {});
-      localFixture.detectChanges();
-
-      expect(
-        emitted.filter((e) => e.fieldProperty === 'metadata.name'),
-      ).toEqual([{ fieldProperty: 'metadata.name', value: '' }]);
-    });
-
-    it('suppresses supplied keys and still seeds absent keys for a partial push', { timeout: 2000 }, () => {
-      // A full initial push supplies both A and B — neither emits on open.
-      // A later partial push mutates only A — A still does NOT emit (its new
-      // value was supplied via initialValues, so recorded as seeded). B is
-      // absent from the partial object; its value is unchanged, so it also
-      // stays silent (per the per-field record contract).
-      const localFixture = TestBed.createComponent(DeclarativeForm);
-      const localComponent = localFixture.componentInstance;
-
-      localFixture.componentRef.setInput('fields', [
-        { name: 'A', label: 'A', validation: 'onChange' },
-        { name: 'B', label: 'B', validation: 'onChange' },
-      ]);
-      localFixture.componentRef.setInput('initialValues', {
-        A: 'A_initial',
-        B: 'B_initial',
-      });
-      localFixture.detectChanges();
-
-      const emitted: FormFieldChangeEvent[] = [];
-      localComponent.fieldChange.subscribe((event) => emitted.push(event));
-
-      // Partial push: only A is supplied, and it changes.
-      localFixture.componentRef.setInput('initialValues', { A: 'A_next' });
-      localFixture.detectChanges();
-
-      // A: supplied by initialValues -> seeded, no emit.
-      // B: absent from the partial object -> still 'B_initial' in the
-      //    control, matches lastEmittedValue -> no emit.
-      expect(emitted.filter((e) => e.fieldProperty === 'A')).toEqual([]);
-      expect(emitted.filter((e) => e.fieldProperty === 'B')).toEqual([]);
-      expect(localComponent.form.controls['A'].value).toBe('A_next');
-      expect(localComponent.form.controls['B'].value).toBe('B_initial');
-    });
-
-    it('still emits for a genuine user change after seeding', () => {
-      // Open with a prefilled value (seeded, no emit), then the user types a
-      // new value via setFormControlValue — that MUST emit and update the
-      // dedupe map so subsequent echoes are suppressed.
-      const localFixture = TestBed.createComponent(DeclarativeForm);
-      const localComponent = localFixture.componentInstance;
-
-      const field: FormFieldDefinition = {
-        name: 'metadata.name',
-        label: 'Name',
-        validation: 'onChange',
-      };
-      localFixture.componentRef.setInput('fields', [field]);
-      localFixture.componentRef.setInput('initialValues', {
-        'metadata.name': 'saved',
-      });
-      localFixture.detectChanges();
-
-      const emitted: FormFieldChangeEvent[] = [];
-      localComponent.fieldChange.subscribe((event) => emitted.push(event));
-
-      // User-driven change -> emits.
-      localComponent.setFormControlValue(
-        { target: { value: 'user-typed' } } as unknown as Event,
-        field,
-      );
-
-      expect(emitted).toEqual([
-        { fieldProperty: 'metadata.name', value: 'user-typed' },
-      ]);
-
-      // A follow-up host push that echoes the same value must NOT re-emit.
-      localFixture.componentRef.setInput('initialValues', {
-        'metadata.name': 'user-typed',
-      });
-      localFixture.detectChanges();
-
-      expect(emitted).toEqual([
-        { fieldProperty: 'metadata.name', value: 'user-typed' },
-      ]);
-    });
-  });
 
   describe('web-component first render (before inputs are assigned)', () => {
     it('renders without emitting NG0950 when fields are not yet set', () => {
