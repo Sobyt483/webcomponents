@@ -96,7 +96,7 @@
     [config]="createFormConfig()"
     [fieldErrors]="createFormState().fieldErrors ?? {}"
     [fields]="resolvedCreateFields()"
-    [initialValues]="createInitialValues()"
+    [initialValues]="{}"
     [open]="createDialogOpen()"
     (cancelled)="closeCreateDialog()"
     (fieldChange)="onCreateFieldChange($event)"
