@@ -269,6 +269,18 @@ export class DeclarativeForm<T extends GenericResource> {
       return;
     }
 
+    this.rebuildCollectionArrays(initialValues);
+    const normalizedValues =
+      this.buildPatchObjectWithSwitchCoercion(initialValues);
+
+    this.form.patchValue(normalizedValues, { emitEvent: false });
+    this.form.markAsPristine({ emitEvent: false });
+    this.form.updateValueAndValidity({ emitEvent: false });
+
+    this.markSuppliedValidationFieldsAsAlreadyEmitted(initialValues);
+  }
+
+  private rebuildCollectionArrays(initialValues: T): void {
     const seeds: Record<string, Record<string, unknown>[]> = {
       ...untracked(this.collectionSeeds),
     };
@@ -277,7 +289,7 @@ export class DeclarativeForm<T extends GenericResource> {
         continue;
       }
 
-      if (!Object.prototype.hasOwnProperty.call(initialValues, field.name)) {
+      if (!this.hasKey(initialValues, field.name)) {
         continue;
       }
 
@@ -296,22 +308,44 @@ export class DeclarativeForm<T extends GenericResource> {
       seeds[field.name] = entries;
     }
     this.collectionSeeds.set(seeds);
+  }
 
+  private buildPatchObjectWithSwitchCoercion(
+    initialValues: T,
+  ): Record<string, unknown> {
     const normalizedValues = { ...(initialValues as Record<string, unknown>) };
     for (const field of this.fields()) {
       if (
         field.inputType === 'Switch' &&
-        Object.prototype.hasOwnProperty.call(normalizedValues, field.name)
+        this.hasKey(normalizedValues, field.name)
       ) {
         normalizedValues[field.name] = coerceBoolean(
           normalizedValues[field.name],
         );
       }
     }
+    return normalizedValues;
+  }
 
-    this.form.patchValue(normalizedValues, { emitEvent: false });
-    this.form.markAsPristine({ emitEvent: false });
-    this.form.updateValueAndValidity({ emitEvent: false });
+  private markSuppliedValidationFieldsAsAlreadyEmitted(initialValues: T): void {
+    for (const field of this.fields()) {
+      if (!this.hasKey(initialValues, field.name)) {
+        continue;
+      }
+      const control = this.form.controls[field.name];
+      if (!control) {
+        continue;
+      }
+      this.lastEmittedValue.set(field.name, control.value);
+    }
+  }
+
+  private hasKey(obj: unknown, name: string): boolean {
+    return (
+      obj != null &&
+      typeof obj === 'object' &&
+      Object.prototype.hasOwnProperty.call(obj, name)
+    );
   }
 
   private buildOutputValue(): T {
