@@ -1,4 +1,8 @@
-import { FormFieldDefinition, FormFieldErrors } from '../../form';
+import {
+  FormFieldChangeEvent,
+  FormFieldDefinition,
+  FormFieldErrors,
+} from '../../form';
 import { ButtonSettings, GenericResource } from '../../models';
 import { TableFieldDefinition } from '../../table';
 
@@ -11,6 +15,24 @@ export interface ResourceFormConfig {
    * rather than prefetching them on render).
    */
   fields: FormFieldDefinition[] | (() => Promise<FormFieldDefinition[]>);
+  /**
+   * Optional hook called each time a field in the dialog changes. Receives the
+   * change event and the current resolved field definitions; returns the next
+   * field definitions (e.g. with dependent field `values` re-resolved) and,
+   * optionally, an `initialValues` patch to reset dependent controls.
+   *
+   * The library treats this as an opaque async transform — it has no knowledge
+   * of how the fields are produced or what the values mean. Returning
+   * `undefined` signals that no change is needed and the current fields remain
+   * in place.
+   */
+  onFieldChange?: (
+    event: FormFieldChangeEvent,
+    currentFields: FormFieldDefinition[],
+  ) => Promise<
+    | { fields: FormFieldDefinition[]; initialValues?: Record<string, unknown> }
+    | undefined
+  >;
   /** Dialog title shown in the header. May contain HTML, which is sanitized before rendering. */
   title?: string;
   /** Label for the confirm/submit button. */

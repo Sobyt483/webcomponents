@@ -15,6 +15,7 @@ import {
   input,
   output,
   signal,
+  untracked,
 } from '@angular/core';
 import {
   FormArray,
@@ -63,6 +64,8 @@ export class DeclarativeForm<T extends GenericResource> {
 
   private readonly passwordVisible = signal<Record<string, boolean>>({});
 
+  private readonly lastEmittedValue = new Map<string, unknown>();
+
   private readonly fb = inject(FormBuilder);
 
   constructor() {
@@ -82,10 +85,14 @@ export class DeclarativeForm<T extends GenericResource> {
 
       for (const field of fields) {
         if (field.validation) {
-          this.fieldChange.emit({
-            fieldProperty: field.name,
-            value: this.form.controls[field.name]?.value ?? '',
-          });
+          const current = this.form.controls[field.name]?.value ?? '';
+          if (this.lastEmittedValue.get(field.name) !== current) {
+            this.lastEmittedValue.set(field.name, current);
+            this.fieldChange.emit({
+              fieldProperty: field.name,
+              value: current,
+            });
+          }
         }
       }
     });
@@ -103,6 +110,7 @@ export class DeclarativeForm<T extends GenericResource> {
     this.formValueChange.emit(this.form.value as Record<string, unknown>);
 
     if (field.validation === 'onChange') {
+      this.lastEmittedValue.set(field.name, control.value);
       this.fieldChange.emit({
         fieldProperty: field.name,
         value: control.value,
@@ -121,6 +129,7 @@ export class DeclarativeForm<T extends GenericResource> {
     this.formValueChange.emit(this.form.value as Record<string, unknown>);
 
     if (field.validation === 'onChange') {
+      this.lastEmittedValue.set(field.name, checked);
       this.fieldChange.emit({
         fieldProperty: field.name,
         value: checked,
@@ -199,9 +208,11 @@ export class DeclarativeForm<T extends GenericResource> {
     this.form.controls[field.name]?.markAsTouched();
 
     if (field.validation === 'onBlur') {
+      const value = this.form.controls[field.name]?.value;
+      this.lastEmittedValue.set(field.name, value);
       this.fieldChange.emit({
         fieldProperty: field.name,
-        value: this.form.controls[field.name]?.value,
+        value,
       });
     }
   }
@@ -258,9 +269,18 @@ export class DeclarativeForm<T extends GenericResource> {
       return;
     }
 
-    const seeds: Record<string, Record<string, unknown>[]> = {};
+    const seeds: Record<string, Record<string, unknown>[]> = {
+      ...untracked(this.collectionSeeds),
+    };
     for (const field of this.fields()) {
-      if (!field.propertyCollection?.length) continue;
+      if (!field.propertyCollection?.length) {
+        continue;
+      }
+
+      if (!Object.prototype.hasOwnProperty.call(initialValues, field.name)) {
+        continue;
+      }
+
       const raw = (initialValues as Record<string, unknown>)[field.name];
       const entries = Array.isArray(raw)
         ? (raw as Record<string, unknown>[])
@@ -279,7 +299,10 @@ export class DeclarativeForm<T extends GenericResource> {
 
     const normalizedValues = { ...(initialValues as Record<string, unknown>) };
     for (const field of this.fields()) {
-      if (field.inputType === 'Switch') {
+      if (
+        field.inputType === 'Switch' &&
+        Object.prototype.hasOwnProperty.call(normalizedValues, field.name)
+      ) {
         normalizedValues[field.name] = coerceBoolean(
           normalizedValues[field.name],
         );

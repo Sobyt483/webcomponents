@@ -2,7 +2,7 @@ import { GenericResource } from '../../models';
 import { FormFieldChangeEvent, FormFieldDefinition } from '../models';
 import { DeclarativeForm } from './declarative-form.component';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ReactiveFormsModule } from '@angular/forms';
+import { ReactiveFormsModule, FormArray, FormGroup } from '@angular/forms';
 import { axe } from 'vitest-axe';
 
 describe('DeclarativeForm', () => {
@@ -353,6 +353,199 @@ describe('DeclarativeForm', () => {
     });
   });
 
+  describe('partial initialValues', () => {
+    const fieldsWithCollection: FormFieldDefinition[] = [
+      {
+        name: 'spec.dependentSelect',
+        label: 'Dependent select',
+        validation: 'onChange',
+      },
+      {
+        name: 'spec.artifacts',
+        label: 'Artifacts',
+        propertyCollection: [
+          { name: 'name', label: 'Name' },
+          { name: 'url', label: 'URL' },
+        ],
+      },
+    ];
+
+    function getCollectionEntries(name: string): Record<string, unknown>[] {
+      const array = component.form.controls[name] as FormArray;
+      return array.controls.map(
+        (group) =>
+          (group as FormGroup).controls['entry'].value as Record<
+            string,
+            unknown
+          >,
+      );
+    }
+
+    beforeEach(() => {
+      fixture.componentRef.setInput('fields', fieldsWithCollection);
+      fixture.componentRef.setInput('initialValues', {
+        'spec.dependentSelect': 'initial-value',
+        'spec.artifacts': [
+          { name: 'a', url: 'https://a' },
+          { name: 'b', url: 'https://b' },
+        ],
+      });
+      fixture.detectChanges();
+    });
+
+    it('should leave an absent collection field untouched (regression)', () => {
+      expect(getCollectionEntries('spec.artifacts')).toEqual([
+        { name: 'a', url: 'https://a' },
+        { name: 'b', url: 'https://b' },
+      ]);
+
+      // Simulate the onFieldChange hook pushing a partial object that only
+      // clears a dependent scalar and omits the collection key entirely.
+      fixture.componentRef.setInput('initialValues', {
+        'spec.dependentSelect': '',
+      });
+      fixture.detectChanges();
+
+      // The collection's already-entered entries must survive, not be wiped.
+      expect(getCollectionEntries('spec.artifacts')).toEqual([
+        { name: 'a', url: 'https://a' },
+        { name: 'b', url: 'https://b' },
+      ]);
+      expect(component.collectionEntries(fieldsWithCollection[1])).toEqual([
+        { name: 'a', url: 'https://a' },
+        { name: 'b', url: 'https://b' },
+      ]);
+    });
+
+    it('should still set the scalar keys the partial object contains', () => {
+      fixture.componentRef.setInput('initialValues', {
+        'spec.dependentSelect': '',
+      });
+      fixture.detectChanges();
+
+      expect(component.form.controls['spec.dependentSelect'].value).toBe('');
+    });
+
+    it('should preserve a scalar sibling absent from the partial object', () => {
+      fixture.componentRef.setInput('initialValues', {
+        'spec.artifacts': [{ name: 'c', url: 'https://c' }],
+      });
+      fixture.detectChanges();
+
+      expect(component.form.controls['spec.dependentSelect'].value).toBe(
+        'initial-value',
+      );
+      expect(getCollectionEntries('spec.artifacts')).toEqual([
+        { name: 'c', url: 'https://c' },
+      ]);
+    });
+
+    it('should rebuild all collection fields for a full initialValues object', () => {
+      fixture.componentRef.setInput('initialValues', {
+        'spec.dependentSelect': 'next',
+        'spec.artifacts': [{ name: 'x', url: 'https://x' }],
+      });
+      fixture.detectChanges();
+
+      expect(component.form.controls['spec.dependentSelect'].value).toBe(
+        'next',
+      );
+      expect(getCollectionEntries('spec.artifacts')).toEqual([
+        { name: 'x', url: 'https://x' },
+      ]);
+    });
+
+    it('should apply a collection key explicitly present as an empty array', () => {
+      fixture.componentRef.setInput('initialValues', {
+        'spec.artifacts': [],
+      });
+      fixture.detectChanges();
+
+      expect(getCollectionEntries('spec.artifacts')).toEqual([]);
+      expect(component.collectionEntries(fieldsWithCollection[1])).toEqual([]);
+    });
+
+    it('should preserve an absent switch sibling in a partial object', () => {
+      fixture.componentRef.setInput('fields', [
+        {
+          name: 'spec.enabled',
+          label: 'Enabled',
+          inputType: 'Switch',
+        },
+        {
+          name: 'spec.dependentSelect',
+          label: 'Dependent select',
+        },
+      ]);
+      fixture.componentRef.setInput('initialValues', {
+        'spec.enabled': true,
+        'spec.dependentSelect': 'initial-value',
+      });
+      fixture.detectChanges();
+
+      expect(component.form.controls['spec.enabled'].value).toBe(true);
+
+      fixture.componentRef.setInput('initialValues', {
+        'spec.dependentSelect': '',
+      });
+      fixture.detectChanges();
+
+      // The switch must keep its value; the partial object must not reset it.
+      expect(component.form.controls['spec.enabled'].value).toBe(true);
+      expect(component.form.controls['spec.dependentSelect'].value).toBe('');
+    });
+
+    it('should settle on repeated partial re-init without a self-triggering effect', () => {
+      // Pin the loop-free re-init contract of setInitialValues: it reads
+      // collectionSeeds via untracked() before .set()-ing a NEW object each run.
+      // That untracked read is load-bearing — the child FormCollectionField
+      // resets its UI from these seeds, so the seeding effect MUST re-seed from
+      // the current seeds, yet it must NOT take a dependency on them, or the
+      // .set() would re-trigger the effect in an endless cascade.
+      //
+      // This test drives two partial re-inits that each touch the collection key
+      // and asserts the component reaches a stable fixed point. If a future
+      // change reintroduced a tracked collectionSeeds read, the seeding effect
+      // would self-trigger; under the zoneless test runner that loop starves the
+      // microtask queue, so this test would stop settling and the run would fail
+      // (as a suite-level non-termination — there is no public zoneless API for a
+      // bounded single-pass effect flush, so it cannot be asserted in-test).
+      fixture.componentRef.setInput('initialValues', {
+        'spec.dependentSelect': 'first',
+        'spec.artifacts': [{ name: 'p', url: 'https://p' }],
+      });
+      fixture.detectChanges();
+
+      expect(getCollectionEntries('spec.artifacts')).toEqual([
+        { name: 'p', url: 'https://p' },
+      ]);
+
+      fixture.componentRef.setInput('initialValues', {
+        'spec.dependentSelect': 'second',
+        'spec.artifacts': [{ name: 'q', url: 'https://q' }],
+      });
+      fixture.detectChanges();
+
+      // Settled on the last push rather than diverging.
+      expect(component.form.controls['spec.dependentSelect'].value).toBe(
+        'second',
+      );
+      expect(getCollectionEntries('spec.artifacts')).toEqual([
+        { name: 'q', url: 'https://q' },
+      ]);
+      expect(component.collectionEntries(fieldsWithCollection[1])).toEqual([
+        { name: 'q', url: 'https://q' },
+      ]);
+
+      // A further flush with no new input must not change anything: the effects
+      // have reached a fixed point (no pending self-triggered re-run).
+      fixture.detectChanges();
+      expect(component.collectionEntries(fieldsWithCollection[1])).toEqual([
+        { name: 'q', url: 'https://q' },
+      ]);
+    });
+  });
+
   describe('fieldChange output', () => {
     it('should emit on value change for validation: onChange field', () => {
       const emitted: FormFieldChangeEvent[] = [];
@@ -687,6 +880,165 @@ describe('DeclarativeForm', () => {
       component.submit();
 
       expect(emitted).toEqual([{ spec: { enabled: true } }]);
+    });
+  });
+
+  describe('fieldChange dedupe (loop prevention)', () => {
+    // A downstream host responds to a parent-field fieldChange by pushing a NEW
+    // `fields` array + NEW `initialValues` object. That input change re-runs the
+    // seeding effect. Without the dedupe the effect re-emits the parent field
+    // with its UNCHANGED value, the host re-resolves and pushes again, and the
+    // loop never terminates (endless gql). A reintroduced loop would emit an
+    // unbounded number of times, so we assert a BOUNDED emit count. The 2s
+    // per-test timeout makes a reintroduced loop fail fast rather than pin CPU.
+
+    const dependencyFields: FormFieldDefinition[] = [
+      // Parent field (user drives this). onBlur matches the real dependent-field
+      // feature, where the namespace parent is validated on blur.
+      {
+        name: 'metadata.namespace',
+        label: 'Namespace',
+        validation: 'onBlur',
+      },
+      // Dependent field cleared by the host when the parent changes.
+      {
+        name: 'spec.dependentSelect',
+        label: 'Dependent select',
+        validation: 'onChange',
+      },
+    ];
+
+    it('does not re-emit the parent field when the host pushes new fields with the same value', { timeout: 2000 }, () => {
+      const localFixture = TestBed.createComponent(DeclarativeForm);
+      const localComponent = localFixture.componentInstance;
+
+      localFixture.componentRef.setInput('fields', dependencyFields);
+      localFixture.detectChanges();
+
+      // Drain the initial seeding emits (value '' for both validated fields).
+      const emitted: FormFieldChangeEvent[] = [];
+      localComponent.fieldChange.subscribe((event) => emitted.push(event));
+
+      // User changes the parent (namespace) and blurs it -> one genuine emit.
+      localComponent.form.controls['metadata.namespace'].setValue('team-a');
+      const namespaceField = dependencyFields[0];
+      localComponent.onFieldBlur(namespaceField);
+
+      expect(emitted).toEqual([
+        { fieldProperty: 'metadata.namespace', value: 'team-a' },
+      ]);
+
+      // The host responds to that emit by pushing a NEW fields array + NEW
+      // initialValues object (new identities) that carry the SAME namespace
+      // value and clear the dependent field. This re-runs the seeding effect.
+      localFixture.componentRef.setInput('fields', [...dependencyFields]);
+      localFixture.componentRef.setInput('initialValues', {
+        'metadata.namespace': 'team-a',
+        'spec.dependentSelect': '',
+      });
+      localFixture.detectChanges();
+
+      // WITHOUT the dedupe the effect echoes namespace=team-a, the host pushes
+      // again, and this explodes without bound. WITH the dedupe the parent is
+      // recognised as already-emitted and is NOT echoed. The dependent field
+      // was seeded at '' initially and is still '' -> also not re-emitted. So
+      // the host push adds nothing.
+      expect(
+        emitted.filter((e) => e.fieldProperty === 'metadata.namespace').length,
+      ).toBe(1);
+      expect(
+        emitted.filter((e) => e.fieldProperty === 'spec.dependentSelect')
+          .length,
+      ).toBe(0);
+      // Bounded total: exactly the single genuine user emit.
+      expect(emitted.length).toBe(1);
+    });
+
+    it('emits once for a dependent field whose value genuinely changes, without looping', { timeout: 2000 }, () => {
+      const localFixture = TestBed.createComponent(DeclarativeForm);
+      const localComponent = localFixture.componentInstance;
+
+      localFixture.componentRef.setInput('fields', dependencyFields);
+      localFixture.componentRef.setInput('initialValues', {
+        'spec.dependentSelect': 'prefilled',
+      });
+      localFixture.detectChanges();
+
+      const emitted: FormFieldChangeEvent[] = [];
+      localComponent.fieldChange.subscribe((event) => emitted.push(event));
+
+      // User changes the parent and blurs it.
+      localComponent.form.controls['metadata.namespace'].setValue('team-b');
+      localComponent.onFieldBlur(dependencyFields[0]);
+
+      // Host responds: same namespace, dependent CLEARED (prefilled -> '').
+      localFixture.componentRef.setInput('fields', [...dependencyFields]);
+      localFixture.componentRef.setInput('initialValues', {
+        'metadata.namespace': 'team-b',
+        'spec.dependentSelect': '',
+      });
+      localFixture.detectChanges();
+
+      // Parent emits once (user). Dependent genuinely changed prefilled -> '' so
+      // the effect emits it exactly once. The dependent has no further
+      // dependents, so this single emit cannot sustain a loop.
+      expect(
+        emitted.filter((e) => e.fieldProperty === 'metadata.namespace').length,
+      ).toBe(1);
+      expect(
+        emitted.filter((e) => e.fieldProperty === 'spec.dependentSelect')
+          .length,
+      ).toBe(1);
+      expect(emitted.length).toBe(2);
+    });
+
+    it('still emits on a genuine later change to a new value', { timeout: 2000 }, () => {
+      const localFixture = TestBed.createComponent(DeclarativeForm);
+      const localComponent = localFixture.componentInstance;
+
+      localFixture.componentRef.setInput('fields', dependencyFields);
+      localFixture.detectChanges();
+
+      const emitted: FormFieldChangeEvent[] = [];
+      localComponent.fieldChange.subscribe((event) => emitted.push(event));
+
+      // Host pushes a genuinely new namespace value via initialValues.
+      localFixture.componentRef.setInput('initialValues', {
+        'metadata.namespace': 'first',
+      });
+      localFixture.detectChanges();
+
+      // Host pushes a different value -> effect must emit again.
+      localFixture.componentRef.setInput('initialValues', {
+        'metadata.namespace': 'second',
+      });
+      localFixture.detectChanges();
+
+      expect(
+        emitted.filter((e) => e.fieldProperty === 'metadata.namespace'),
+      ).toEqual([
+        { fieldProperty: 'metadata.namespace', value: 'first' },
+        { fieldProperty: 'metadata.namespace', value: 'second' },
+      ]);
+    });
+
+    it('seeds each validation field exactly once on initial open', { timeout: 2000 }, () => {
+      const localFixture = TestBed.createComponent(DeclarativeForm);
+      const localComponent = localFixture.componentInstance;
+
+      const emitted: FormFieldChangeEvent[] = [];
+      localComponent.fieldChange.subscribe((event) => emitted.push(event));
+
+      localFixture.componentRef.setInput('fields', dependencyFields);
+      localFixture.detectChanges();
+
+      expect(
+        emitted.filter((e) => e.fieldProperty === 'metadata.namespace').length,
+      ).toBe(1);
+      expect(
+        emitted.filter((e) => e.fieldProperty === 'spec.dependentSelect')
+          .length,
+      ).toBe(1);
     });
   });
 

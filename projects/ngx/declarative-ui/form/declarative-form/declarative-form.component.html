@@ -39,7 +39,6 @@
           [valueState]="getValueState(field.name)"
           (blur)="onFieldBlur(field)"
           (change)="setFormControlValue($event, field)"
-          (input)="setFormControlValue($event, field)"
         >
           @if (getError(field.name); as error) {
             <div slot="valueStateMessage">{{ error }}</div>

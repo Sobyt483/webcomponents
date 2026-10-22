@@ -114,6 +114,11 @@ export class DeclarativeTableCard<R extends GenericResource> {
   protected pendingResource = signal<R | null>(null);
   protected resolvedCreateFields = signal<FormFieldDefinition[]>([]);
   protected resolvedEditFields = signal<FormFieldDefinition[]>([]);
+  protected createInitialValues = signal<Record<string, unknown>>({});
+  /** Overrides for the edit dialog's initial values, set by the onFieldChange hook. */
+  private editInitialValuesOverride = signal<Record<string, unknown> | null>(
+    null,
+  );
 
   protected tableConfig = computed(() => this.config()?.tableConfig);
   protected header = computed(() => this.config()?.header);
@@ -145,6 +150,11 @@ export class DeclarativeTableCard<R extends GenericResource> {
   );
   protected effectiveColumns = computed(() => this.tableConfig()?.fields ?? []);
   protected editInitialValue = computed(() => {
+    const override = this.editInitialValuesOverride();
+    if (override !== null) {
+      return override;
+    }
+
     const pendingResource = this.pendingResource();
     const editConfig = this.editFormConfig();
     if (!pendingResource || !editConfig) {
@@ -261,6 +271,7 @@ export class DeclarativeTableCard<R extends GenericResource> {
   }
 
   async openCreateDialog(): Promise<void> {
+    this.createInitialValues.set({});
     this.resolvedCreateFields.set(
       await this.resolveFormFields(this.createFormConfig()?.fields),
     );
@@ -268,6 +279,7 @@ export class DeclarativeTableCard<R extends GenericResource> {
   }
 
   private async openEditDialog(resource: R): Promise<void> {
+    this.editInitialValuesOverride.set(null);
     const config = this.config()?.editResourceFormConfig?.(resource);
     const fields = await this.resolveFormFields(config?.fields);
     // A newer update action may have replaced the pending resource while we
@@ -303,15 +315,68 @@ export class DeclarativeTableCard<R extends GenericResource> {
     this.deleteDialogOpen.set(false);
   }
 
-  onCreateFieldChange(event: FormFieldChangeEvent): void {
+  /**
+   * Map tracking the last-seen value per field — used as a last-write-wins
+   * race token for `onFieldChange` async calls. A stale resolver result is
+   * dropped when the field's value changed again before the promise settled.
+   */
+  private readonly createFieldRaceTokens = new Map<string, unknown>();
+  private readonly editFieldRaceTokens = new Map<string, unknown>();
+
+  async onCreateFieldChange(event: FormFieldChangeEvent): Promise<void> {
+    // Always honour the existing output contract first.
     this.createFieldChange.emit(event);
+
+    const onFieldChange = this.createFormConfig()?.onFieldChange;
+    if (!onFieldChange) return;
+
+    // Capture a last-write-wins token before the await.
+    this.createFieldRaceTokens.set(event.fieldProperty, event.value);
+    const result = await onFieldChange(event, this.resolvedCreateFields());
+
+    // If the field changed again while we awaited, discard this stale result.
+    if (this.createFieldRaceTokens.get(event.fieldProperty) !== event.value) {
+      return;
+    }
+
+    if (result === undefined) return;
+
+    this.resolvedCreateFields.set(result.fields);
+    if (result.initialValues !== undefined) {
+      this.createInitialValues.set(result.initialValues);
+    }
   }
 
-  onEditFieldChange(event: FormFieldChangeEvent): void {
+  async onEditFieldChange(event: FormFieldChangeEvent): Promise<void> {
     const resource = this.pendingResource();
+    if (!resource) return;
 
-    if (resource) {
-      this.editFieldChange.emit({ resource, formChangeEvent: event });
+    // Always honour the existing output contract first.
+    this.editFieldChange.emit({ resource, formChangeEvent: event });
+
+    const onFieldChange = this.editFormConfig()?.onFieldChange;
+    if (!onFieldChange) return;
+
+    // Capture a last-write-wins token before the await.
+    this.editFieldRaceTokens.set(event.fieldProperty, event.value);
+    const result = await onFieldChange(event, this.resolvedEditFields());
+
+    // If the field changed again while we awaited, discard this stale result.
+    if (this.editFieldRaceTokens.get(event.fieldProperty) !== event.value) {
+      return;
+    }
+
+    // Also discard if the pending resource changed while we awaited
+    // (mirrors the guard used in openEditDialog).
+    if (this.pendingResource() !== resource) {
+      return;
+    }
+
+    if (result === undefined) return;
+
+    this.resolvedEditFields.set(result.fields);
+    if (result.initialValues !== undefined) {
+      this.editInitialValuesOverride.set(result.initialValues);
     }
   }
 
