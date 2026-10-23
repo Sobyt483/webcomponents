@@ -15,7 +15,6 @@ import {
   ViewEncapsulation,
   afterNextRender,
   computed,
-  effect,
   inject,
   input,
   output,
@@ -39,6 +38,7 @@ export class ResourceFormDialog {
   readonly config = input<ResourceFormConfig | undefined>(undefined);
   readonly fields = input<FormFieldDefinition[]>([]);
   readonly fieldErrors = input<FormFieldErrors>({});
+  readonly pending = input(false);
   readonly initialValues = input<Record<string, unknown>>({});
   readonly defaultTitle = input('Create');
   readonly defaultConfirmLabel = input('Save');
@@ -46,14 +46,8 @@ export class ResourceFormDialog {
   readonly dataTestidPrefix = input('generic-table-card-create');
 
   readonly fieldChange = output<FormFieldChangeEvent>();
-  readonly fieldsUpdated = output<{
-    fields: FormFieldDefinition[];
-    initialValues?: Record<string, unknown>;
-  }>();
   readonly submitted = output<Record<string, unknown>>();
   readonly cancelled = output<void>();
-
-  private readonly latestValues = new Map<string, unknown>();
 
   private readonly injector = inject(Injector);
 
@@ -64,66 +58,23 @@ export class ResourceFormDialog {
     return !!errors && Object.values(errors).some((val) => !!val);
   });
 
-  constructor() {
-    let prevOpen = this.open();
-    // On every `open` toggle, invalidate the race-guard map so in-flight
-    // resolvers from the previous session cannot land on the new one. On
-    // close transitions, additionally reset the inner form so a reopen
-    // starts with empty controls
-    effect(() => {
-      const currentOpen = this.open();
-      this.latestValues.clear();
-      if (prevOpen && !currentOpen) {
-        this.form()?.form.reset({}, { emitEvent: false });
-      }
-      prevOpen = currentOpen;
-    });
-  }
-
-  protected async handleFieldChange(
-    event: FormFieldChangeEvent,
-  ): Promise<void> {
-    this.fieldChange.emit(event);
-
-    if (event.source === 'seed') return;
-
-    const onFieldChange = this.config()?.onFieldChange;
-    if (!onFieldChange) return;
-
-    const stillCurrent = this.acquireLatestValue(
-      event.fieldProperty,
-      event.value,
-    );
-    const result = await onFieldChange(event, this.fields());
-
-    if (!stillCurrent()) return;
-    if (result === undefined) return;
-
-    this.fieldsUpdated.emit({
-      fields: result.fields,
-      initialValues: result.initialValues,
-    });
-  }
-
-  private acquireLatestValue(key: string, value: unknown): () => boolean {
-    this.latestValues.set(key, value);
-    return () => this.latestValues.get(key) === value;
+  protected submit(): void {
+    this.form()?.submit();
   }
 
   /**
-   * Delegates to {@link DeclarativeForm.patchForm}. Scheduled via
-   * `afterNextRender` so hosts can call this synchronously right after
-   * flipping `open: true` or pushing a new `fields` identity — the actual
-   * write runs after Angular's next CD cycle, by which point the inner
-   * form's `rebuildControls` effect has created the FormGroup entries for
-   * the current fields and `form.patchValue` can land. The silent-seed
-   * path is `patchForm(values, { emitEvent: false })` — matches Angular's
-   * own `setValue(v, { emitEvent: false })` convention.
+   * Applies a partial patch immediately when the inner form exists. Before
+   * its first render, defers the patch until controls have been created.
    */
   patchForm(
     values: Partial<Record<string, unknown>>,
-    options?: { emitEvent?: boolean },
+    options?: { emitEvent?: boolean; markAsDirty?: boolean },
   ): void {
+    const form = this.form();
+    if (form) {
+      form.patchForm(values as Record<string, unknown>, options);
+      return;
+    }
     afterNextRender(
       () => {
         this.form()?.patchForm(values as Record<string, unknown>, options);

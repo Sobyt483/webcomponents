@@ -2,7 +2,7 @@ import { GenericResource } from '../../models';
 import { FormFieldChangeEvent, FormFieldDefinition } from '../models';
 import { DeclarativeForm } from './declarative-form.component';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ReactiveFormsModule, FormArray, FormGroup } from '@angular/forms';
+import { FormArray, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { axe } from 'vitest-axe';
 
 describe('DeclarativeForm', () => {
@@ -557,9 +557,14 @@ describe('DeclarativeForm', () => {
         onChangeField,
       );
 
-      expect(emitted).toEqual([
+      expect(emitted).toMatchObject([
         { fieldProperty: 'metadata.name', value: 'new-value', source: 'user' },
       ]);
+      expect(emitted[0].formValues).toEqual({
+        'metadata.name': 'new-value',
+        'metadata.namespace': '',
+        'metadata.labels': '',
+      });
     });
 
     it('should not emit on blur for validation: onChange field', () => {
@@ -569,7 +574,7 @@ describe('DeclarativeForm', () => {
       const onChangeField = testFields.find((f) => f.name === 'metadata.name')!;
       component.onFieldBlur(onChangeField);
 
-      expect(emitted).toEqual([]);
+      expect(emitted).toMatchObject([]);
     });
 
     it('should emit on blur for validation: onBlur field', () => {
@@ -584,11 +589,11 @@ describe('DeclarativeForm', () => {
         onBlurField,
       );
 
-      expect(emitted).toEqual([]);
+      expect(emitted).toMatchObject([]);
 
       component.onFieldBlur(onBlurField);
 
-      expect(emitted).toEqual([
+      expect(emitted).toMatchObject([
         {
           fieldProperty: 'metadata.namespace',
           value: 'kube-system',
@@ -609,7 +614,7 @@ describe('DeclarativeForm', () => {
         onBlurField,
       );
 
-      expect(emitted).toEqual([]);
+      expect(emitted).toMatchObject([]);
     });
 
     it('should not emit on change or blur for field without validation', () => {
@@ -625,7 +630,7 @@ describe('DeclarativeForm', () => {
       );
       component.onFieldBlur(noValidationField);
 
-      expect(emitted).toEqual([]);
+      expect(emitted).toMatchObject([]);
     });
 
     it('should emit on value change for validation: onChange switch field', () => {
@@ -646,7 +651,7 @@ describe('DeclarativeForm', () => {
         switchField,
       );
 
-      expect(emitted).toEqual([
+      expect(emitted).toMatchObject([
         { fieldProperty: 'spec.enabled', value: true, source: 'user' },
       ]);
       expect(component.form.controls['spec.enabled'].value).toBe(true);
@@ -670,7 +675,7 @@ describe('DeclarativeForm', () => {
         switchField,
       );
 
-      expect(emitted).toEqual([]);
+      expect(emitted).toMatchObject([]);
     });
 
     it('should emit on blur for validation: onBlur switch field', () => {
@@ -693,7 +698,7 @@ describe('DeclarativeForm', () => {
 
       component.onFieldBlur(switchField);
 
-      expect(emitted).toEqual([
+      expect(emitted).toMatchObject([
         { fieldProperty: 'spec.enabled', value: true, source: 'user' },
       ]);
     });
@@ -715,7 +720,7 @@ describe('DeclarativeForm', () => {
         switchField,
       );
 
-      expect(emitted).toEqual([{ 'spec.enabled': true }]);
+      expect(emitted).toMatchObject([{ 'spec.enabled': true }]);
     });
   });
 
@@ -850,7 +855,7 @@ describe('DeclarativeForm', () => {
         { emitEvent: false },
       );
 
-      expect(emitted).toEqual([]);
+      expect(emitted).toMatchObject([]);
     });
   });
 
@@ -878,7 +883,7 @@ describe('DeclarativeForm', () => {
       // metadata.name has validation + prefilled value → emits seeded value.
       expect(
         emitted.filter((e) => e.fieldProperty === 'metadata.name'),
-      ).toEqual([
+      ).toMatchObject([
         {
           fieldProperty: 'metadata.name',
           value: 'seeded-name',
@@ -888,7 +893,7 @@ describe('DeclarativeForm', () => {
       // metadata.namespace has validation but NO prefilled value → emits ''.
       expect(
         emitted.filter((e) => e.fieldProperty === 'metadata.namespace'),
-      ).toEqual([
+      ).toMatchObject([
         {
           fieldProperty: 'metadata.namespace',
           value: '',
@@ -932,7 +937,7 @@ describe('DeclarativeForm', () => {
       );
     });
 
-    it('does not emit on a bare fields() identity change (no setInitialValues)', () => {
+    it('seeds validation when a new field appears after initial values', () => {
       const localFixture = TestBed.createComponent(DeclarativeForm);
       const localComponent = localFixture.componentInstance;
 
@@ -943,10 +948,20 @@ describe('DeclarativeForm', () => {
       const emitted: FormFieldChangeEvent[] = [];
       localComponent.fieldChange.subscribe((event) => emitted.push(event));
 
-      localFixture.componentRef.setInput('fields', [...testFields]);
+      localFixture.componentRef.setInput('fields', [
+        ...testFields,
+        { name: 'spec.late', label: 'Late', validation: 'onChange' },
+      ]);
       localFixture.detectChanges();
 
-      expect(emitted).toEqual([]);
+      expect(emitted).toContainEqual(
+        expect.objectContaining({
+          fieldProperty: 'spec.late',
+          value: '',
+          source: 'seed',
+          formValues: expect.objectContaining({ 'spec.late': '' }),
+        }),
+      );
     });
 
     it('still fires user-driven emits after seeding', () => {
@@ -973,7 +988,7 @@ describe('DeclarativeForm', () => {
         field,
       );
 
-      expect(emitted).toEqual([
+      expect(emitted).toMatchObject([
         {
           fieldProperty: 'metadata.name',
           value: 'user-typed',
@@ -987,7 +1002,7 @@ describe('DeclarativeForm', () => {
         { emitEvent: false },
       );
 
-      expect(emitted).toEqual([
+      expect(emitted).toMatchObject([
         {
           fieldProperty: 'metadata.name',
           value: 'user-typed',
@@ -996,57 +1011,61 @@ describe('DeclarativeForm', () => {
       ]);
     });
 
-    it('settles on repeated host-driven patchForm pushes (no loop)', { timeout: 2000 }, () => {
-      // Guards the parent↔dependent loop at the DeclarativeForm layer: a host
-      // that reacts to an emit by applying fresh values via `patchForm({
-      // emitEvent: false })` must NOT trigger another emit from the form. The
-      // 2s timeout fails fast if a regression reintroduced the loop.
-      const dependencyFields: FormFieldDefinition[] = [
-        {
-          name: 'metadata.namespace',
-          label: 'Namespace',
-          validation: 'onBlur',
-        },
-        {
-          name: 'spec.dependentSelect',
-          label: 'Dependent select',
-          validation: 'onChange',
-        },
-      ];
+    it(
+      'settles on repeated host-driven patchForm pushes (no loop)',
+      { timeout: 2000 },
+      () => {
+        // Guards the parent↔dependent loop at the DeclarativeForm layer: a host
+        // that reacts to an emit by applying fresh values via `patchForm({
+        // emitEvent: false })` must NOT trigger another emit from the form. The
+        // 2s timeout fails fast if a regression reintroduced the loop.
+        const dependencyFields: FormFieldDefinition[] = [
+          {
+            name: 'metadata.namespace',
+            label: 'Namespace',
+            validation: 'onBlur',
+          },
+          {
+            name: 'spec.dependentSelect',
+            label: 'Dependent select',
+            validation: 'onChange',
+          },
+        ];
 
-      const localFixture = TestBed.createComponent(DeclarativeForm);
-      const localComponent = localFixture.componentInstance;
+        const localFixture = TestBed.createComponent(DeclarativeForm);
+        const localComponent = localFixture.componentInstance;
 
-      const emitted: FormFieldChangeEvent[] = [];
-      localComponent.fieldChange.subscribe((event) => emitted.push(event));
+        const emitted: FormFieldChangeEvent[] = [];
+        localComponent.fieldChange.subscribe((event) => emitted.push(event));
 
-      localFixture.componentRef.setInput('fields', dependencyFields);
-      localFixture.componentRef.setInput('initialValues', {});
-      localFixture.detectChanges();
+        localFixture.componentRef.setInput('fields', dependencyFields);
+        localFixture.componentRef.setInput('initialValues', {});
+        localFixture.detectChanges();
 
-      const seedCount = emitted.length;
-      expect(seedCount).toBe(2);
+        const seedCount = emitted.length;
+        expect(seedCount).toBe(2);
 
-      // Host responds by applying new values via silent patchForm. No further
-      // emit must happen.
-      localComponent.patchForm(
-        {
-          'metadata.namespace': 'team-a',
-          'spec.dependentSelect': '',
-        } as GenericResource,
-        { emitEvent: false },
-      );
-      // And again, to make sure repeated silent writes don't accumulate emits.
-      localComponent.patchForm(
-        {
-          'metadata.namespace': 'team-b',
-          'spec.dependentSelect': '',
-        } as GenericResource,
-        { emitEvent: false },
-      );
+        // Host responds by applying new values via silent patchForm. No further
+        // emit must happen.
+        localComponent.patchForm(
+          {
+            'metadata.namespace': 'team-a',
+            'spec.dependentSelect': '',
+          } as GenericResource,
+          { emitEvent: false },
+        );
+        // And again, to make sure repeated silent writes don't accumulate emits.
+        localComponent.patchForm(
+          {
+            'metadata.namespace': 'team-b',
+            'spec.dependentSelect': '',
+          } as GenericResource,
+          { emitEvent: false },
+        );
 
-      expect(emitted.length).toBe(seedCount);
-    });
+        expect(emitted.length).toBe(seedCount);
+      },
+    );
 
     it('re-emits on EVERY input identity push (restored library-wide contract)', () => {
       // Guards the restored contract: a NEW `[initialValues]` identity push
@@ -1072,9 +1091,7 @@ describe('DeclarativeForm', () => {
 
       expect(emitted.length).toBeGreaterThan(firstCount);
       expect(
-        emitted
-          .filter((e) => e.fieldProperty === 'metadata.name')
-          .pop()?.value,
+        emitted.filter((e) => e.fieldProperty === 'metadata.name').pop()?.value,
       ).toBe('second');
     });
   });
@@ -1105,7 +1122,7 @@ describe('DeclarativeForm', () => {
       expect(localComponent.form.controls['metadata.namespace'].value).toBe(
         'ns-a',
       );
-      expect(emitted).toEqual([
+      expect(emitted).toMatchObject([
         { fieldProperty: 'metadata.name', value: 'via-patch', source: 'seed' },
         { fieldProperty: 'metadata.namespace', value: 'ns-a', source: 'seed' },
       ]);
@@ -1147,7 +1164,7 @@ describe('DeclarativeForm', () => {
       expect(localComponent.form.controls['metadata.name'].value).toBe(
         'silent',
       );
-      expect(emitted).toEqual([]);
+      expect(emitted).toMatchObject([]);
     });
 
     it('patchForm with emitEvent:false on a prefilled parent + dependent does not emit (edit-open self-clear fix)', () => {
@@ -1176,7 +1193,7 @@ describe('DeclarativeForm', () => {
         { emitEvent: false },
       );
 
-      expect(emitted).toEqual([]);
+      expect(emitted).toMatchObject([]);
     });
 
     it('still emits on a user interaction AFTER a silent patchForm', () => {
@@ -1204,7 +1221,7 @@ describe('DeclarativeForm', () => {
         field,
       );
 
-      expect(emitted).toEqual([
+      expect(emitted).toMatchObject([
         {
           fieldProperty: 'metadata.name',
           value: 'user-typed',
@@ -1299,7 +1316,7 @@ describe('DeclarativeForm', () => {
 
       component.submit();
 
-      expect(emitted).toEqual([
+      expect(emitted).toMatchObject([
         {
           metadata: {
             name: 'my-app',
@@ -1326,10 +1343,9 @@ describe('DeclarativeForm', () => {
 
       component.submit();
 
-      expect(emitted).toEqual([{ spec: { enabled: true } }]);
+      expect(emitted).toMatchObject([{ spec: { enabled: true } }]);
     });
   });
-
 
   describe('web-component first render (before inputs are assigned)', () => {
     it('renders without emitting NG0950 when fields are not yet set', () => {

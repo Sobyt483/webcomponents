@@ -229,7 +229,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-
   describe('header input', () => {
     it('renders the header title when header is provided', () => {
       const { fixture } = setup({ header: 'My Pods' });
@@ -240,7 +239,6 @@ describe('DeclarativeTableCard', () => {
       expect(title?.textContent?.trim()).toBe('My Pods');
     });
   });
-
 
   describe('headerTooltip input', () => {
     it('renders info icon when headerTooltip is provided', () => {
@@ -262,7 +260,6 @@ describe('DeclarativeTableCard', () => {
       expect(root.querySelector('ui5-icon[name="hint"]')).toBeNull();
     });
   });
-
 
   describe('search', () => {
     const setupSearch = (searchConfig: TableCardConfig['searchConfig']) => {
@@ -387,7 +384,6 @@ describe('DeclarativeTableCard', () => {
       expect((component as any).searchPlaceholder()).toBe('Search');
     });
   });
-
 
   /**
    * Small fixture builder — the shared `setup()` helper doesn't accept a
@@ -631,7 +627,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-
   describe('create button', () => {
     it('create button is absent when createConfig is not provided', () => {
       const { fixture } = setup();
@@ -647,7 +642,6 @@ describe('DeclarativeTableCard', () => {
       expect(root.querySelector('.card__create-btn')).not.toBeNull();
     });
   });
-
 
   describe('effectiveColumns()', () => {
     it('returns readConfig.fields unchanged', () => {
@@ -757,7 +751,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-
   describe('openCreateDialog()', () => {
     it('resolves an array fields config and opens the dialog', async () => {
       const { component } = setup({ createConfig: CREATE_CONFIG });
@@ -792,7 +785,6 @@ describe('DeclarativeTableCard', () => {
       expect((component as any).createDialogOpen()).toBe(true);
     });
   });
-
 
   describe('openEditDialog() concurrency', () => {
     /** A promise plus its resolver, so the test controls when it settles. */
@@ -900,8 +892,7 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-
-  describe('fieldsUpdated write-back', () => {
+  describe('runtime form patches', () => {
     const UPDATED_FIELDS: FormFieldDefinition[] = [
       { name: 'metadata.name', label: 'Name' },
       {
@@ -932,92 +923,65 @@ describe('DeclarativeTableCard', () => {
       );
     }
 
-    it('onCreateFieldsUpdated writes fields and calls dialog.patchForm({emitEvent:false}) for initialValues', () => {
+    it('patches a create field and its value without replacing siblings', () => {
       const { fixture, component } = setup({ createConfig: CREATE_CONFIG });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (component as any).createDialogOpen.set(true);
+      component['resolvedCreateFields'].set(UPDATED_FIELDS);
+      component['createDialogOpen'].set(true);
       fixture.detectChanges();
-
-      const dialog = dialogByPrefix(fixture, 'generic-table-card-create');
-      expect(dialog).not.toBeNull();
-      const spy = vi.spyOn(dialog!, 'patchForm');
-
-      component.onCreateFieldsUpdated({
-        fields: UPDATED_FIELDS,
-        initialValues: { 'metadata.namespace': '' },
-      });
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((component as any).resolvedCreateFields()).toEqual(UPDATED_FIELDS);
-      expect(spy).toHaveBeenCalledWith(
-        { 'metadata.namespace': '' },
-        { emitEvent: false },
-      );
-    });
-
-    it('onCreateFieldsUpdated does not call patchForm when payload omits initialValues', () => {
-      const { fixture, component } = setup({ createConfig: CREATE_CONFIG });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (component as any).createDialogOpen.set(true);
-      fixture.detectChanges();
-
       const dialog = dialogByPrefix(fixture, 'generic-table-card-create');
       const spy = vi.spyOn(dialog!, 'patchForm');
 
-      component.onCreateFieldsUpdated({ fields: UPDATED_FIELDS });
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((component as any).resolvedCreateFields()).toEqual(UPDATED_FIELDS);
-      expect(spy).not.toHaveBeenCalled();
-    });
-
-    it('onEditFieldsUpdated writes fields and calls dialog.patchForm({emitEvent:false}) for initialValues', async () => {
-      const { fixture, component } = setup({ editConfig: EDIT_CONFIG });
-      // Drive openEditDialog so pendingResource + resolvedEditFields are set.
-      component.onButtonClick(makeEvent('update', RESOURCES[0]));
-      await Promise.resolve();
-      fixture.detectChanges();
-
-      const dialog = dialogByPrefix(fixture, 'generic-table-card-edit');
-      expect(dialog).not.toBeNull();
-      const spy = vi.spyOn(dialog!, 'patchForm');
-
-      component.onEditFieldsUpdated({
-        fields: UPDATED_FIELDS,
-        initialValues: { 'metadata.namespace': '' },
+      component.applyCreateFormPatch({
+        values: { 'metadata.namespace': '' },
+        fieldUpdates: {
+          'metadata.namespace': { values: ['staging'], optionsState: 'ready' },
+        },
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((component as any).resolvedEditFields()).toEqual(UPDATED_FIELDS);
+      expect(component['resolvedCreateFields']()[0]).toEqual(UPDATED_FIELDS[0]);
+      expect(component['resolvedCreateFields']()[1]).toMatchObject({
+        values: ['staging'],
+        optionsState: 'ready',
+      });
       expect(spy).toHaveBeenCalledWith(
         { 'metadata.namespace': '' },
-        { emitEvent: false },
+        { emitEvent: false, markAsDirty: true },
       );
     });
 
-    it('onEditFieldsUpdated does not call patchForm when payload omits initialValues', async () => {
+    it('patches an edit field and its value without replacing siblings', () => {
       const { fixture, component } = setup({ editConfig: EDIT_CONFIG });
-      component.onButtonClick(makeEvent('update', RESOURCES[0]));
-      await Promise.resolve();
+      component['resolvedEditFields'].set(UPDATED_FIELDS);
+      component['editDialogOpen'].set(true);
       fixture.detectChanges();
-
       const dialog = dialogByPrefix(fixture, 'generic-table-card-edit');
       const spy = vi.spyOn(dialog!, 'patchForm');
 
-      component.onEditFieldsUpdated({ fields: UPDATED_FIELDS });
+      component.applyEditFormPatch({
+        values: { 'metadata.namespace': '' },
+        fieldUpdates: {
+          'metadata.namespace': { values: ['staging'], optionsState: 'ready' },
+        },
+      });
 
-      expect(spy).not.toHaveBeenCalled();
+      expect(component['resolvedEditFields']()[0]).toEqual(UPDATED_FIELDS[0]);
+      expect(component['resolvedEditFields']()[1]).toMatchObject({
+        values: ['staging'],
+        optionsState: 'ready',
+      });
+      expect(spy).toHaveBeenCalledWith(
+        { 'metadata.namespace': '' },
+        { emitEvent: false, markAsDirty: true },
+      );
     });
 
-    it('regression: openEditDialog seeds via patchForm({emitEvent:false}) on every open', async () => {
-      // The seed path must fire on EACH open (direct patchForm call),
-      // not once per instance.
+    it('seeds edit values on every open', async () => {
+      // Each dialog session receives the resource's values.
       const { fixture, component } = setup({ editConfig: EDIT_CONFIG });
 
       component.onButtonClick(makeEvent('update', RESOURCES[0]));
       await Promise.resolve();
       fixture.detectChanges();
-      // afterNextRender callbacks schedule after the next change detection pass.
       await fixture.whenStable();
 
       let dialog = dialogByPrefix(fixture, 'generic-table-card-edit');
@@ -1151,7 +1115,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-
   describe('close methods', () => {
     it('closeCreateDialog() closes the create dialog', () => {
       const { component } = setup({ createConfig: CREATE_CONFIG });
@@ -1186,7 +1149,6 @@ describe('DeclarativeTableCard', () => {
       expect((component as any).deleteDialogOpen()).toBe(false);
     });
   });
-
 
   describe('runtime form state', () => {
     it('disables the create submit button when fieldErrors has errors', () => {
@@ -1262,7 +1224,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-
   describe('pass-through outputs', () => {
     it('exposes tableRowClicked output', () => {
       const { component } = setup();
@@ -1286,7 +1247,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-
   describe('readConfig pagination', () => {
     it('effectiveColumns() uses fields from readConfig', () => {
       const customColumns: TableFieldDefinition[] = [
@@ -1305,7 +1265,6 @@ describe('DeclarativeTableCard', () => {
       expect(cols[0]).toEqual(customColumns[0]);
     });
   });
-
 
   describe('tableConfig passthrough: loadMode, height, loadMoreButtonText', () => {
     it('exposes loadMode via tableConfig signal', () => {
@@ -1350,7 +1309,6 @@ describe('DeclarativeTableCard', () => {
       expect(emitted).toEqual([4]);
     });
   });
-
 
   describe('permissions input threading', () => {
     it('accepts a permissions map and exposes it via the permissions() signal', () => {
@@ -1405,7 +1363,6 @@ describe('DeclarativeTableCard', () => {
       expect(tableComp.permissions()).toBe(permissions);
     });
   });
-
 
   describe('data-testid attributes', () => {
     it('root card div has data-testid="generic-table-card"', () => {

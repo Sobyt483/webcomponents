@@ -85,10 +85,14 @@ export class DeclarativeForm<T extends GenericResource> {
     });
 
     effect(() => {
-      this.setInitialValues(this.initialValues());
+      const values = this.initialValues();
+      untracked(() => {
+        this.setInitialValues(values);
+      });
     });
 
     effect(() => {
+      this.fields();
       this.initialValues();
       untracked(() => {
         this.seedValidationFields();
@@ -108,8 +112,16 @@ export class DeclarativeForm<T extends GenericResource> {
    * `[initialValues]` input push: `fieldChange` fires once for every
    * validation field with its resulting control value.
    */
-  patchForm(values: Partial<T>, options?: { emitEvent?: boolean }): void {
-    this.setInitialValues(values as T);
+  patchForm(
+    values: Partial<T>,
+    options?: { emitEvent?: boolean; markAsDirty?: boolean },
+  ): void {
+    this.setInitialValues(values as T, false);
+    if (options?.markAsDirty) {
+      for (const name of Object.keys(values as object)) {
+        this.form.controls[name]?.markAsDirty();
+      }
+    }
     if (options?.emitEvent !== false) {
       this.seedValidationFields();
     }
@@ -125,6 +137,7 @@ export class DeclarativeForm<T extends GenericResource> {
         fieldProperty: field.name,
         value: control.value,
         source: 'seed',
+        formValues: this.form.getRawValue(),
       });
     }
   }
@@ -145,6 +158,7 @@ export class DeclarativeForm<T extends GenericResource> {
         fieldProperty: field.name,
         value: control.value,
         source: 'user',
+        formValues: this.form.getRawValue(),
       });
     }
   }
@@ -164,6 +178,7 @@ export class DeclarativeForm<T extends GenericResource> {
         fieldProperty: field.name,
         value: checked,
         source: 'user',
+        formValues: this.form.getRawValue(),
       });
     }
   }
@@ -221,6 +236,7 @@ export class DeclarativeForm<T extends GenericResource> {
         fieldProperty: field.name,
         value: entries,
         source: 'user',
+        formValues: this.form.getRawValue(),
       });
     }
   }
@@ -245,6 +261,7 @@ export class DeclarativeForm<T extends GenericResource> {
         fieldProperty: field.name,
         value,
         source: 'user',
+        formValues: this.form.getRawValue(),
       });
     }
   }
@@ -255,7 +272,23 @@ export class DeclarativeForm<T extends GenericResource> {
 
   clear(): void {
     this.form.reset();
+    this.collectionSeeds.set({});
     this.passwordVisible.set({});
+  }
+
+  protected selectOptions(
+    field: FormFieldDefinition,
+    currentValue: unknown,
+  ): string[] {
+    const options = ['', ...(field.values ?? [])];
+    if (
+      typeof currentValue === 'string' &&
+      currentValue &&
+      !options.includes(currentValue)
+    ) {
+      options.push(currentValue);
+    }
+    return options;
   }
 
   collectionEntries(field: FormFieldDefinition): Record<string, unknown>[] {
@@ -265,6 +298,7 @@ export class DeclarativeForm<T extends GenericResource> {
   private rebuildControls(fields: FormFieldDefinition[]): void {
     const existingControls = this.form.controls;
     const nextFieldNames = new Set(fields.map((field) => field.name));
+    const added: string[] = [];
 
     for (const field of fields) {
       const existingControl = existingControls[field.name];
@@ -285,6 +319,7 @@ export class DeclarativeForm<T extends GenericResource> {
       } else {
         this.form.addControl(field.name, new FormControl(''));
       }
+      added.push(field.name);
     }
 
     for (const controlName of Object.keys(existingControls)) {
@@ -294,9 +329,21 @@ export class DeclarativeForm<T extends GenericResource> {
     }
 
     this.form.updateValueAndValidity({ emitEvent: false });
+    if (added.length) {
+      const values = untracked(this.initialValues) as Record<string, unknown>;
+      const seed = Object.fromEntries(
+        added
+          .filter((name) => this.hasKey(values, name))
+          .map((name) => [name, values[name]]),
+      );
+      this.setInitialValues(seed as T, false);
+    }
   }
 
-  private setInitialValues(initialValues: T | null | undefined): void {
+  private setInitialValues(
+    initialValues: T | null | undefined,
+    markPristine = true,
+  ): void {
     if (!initialValues) {
       return;
     }
@@ -306,7 +353,7 @@ export class DeclarativeForm<T extends GenericResource> {
       this.buildPatchObjectWithSwitchCoercion(initialValues);
 
     this.form.patchValue(normalizedValues, { emitEvent: false });
-    this.form.markAsPristine({ emitEvent: false });
+    if (markPristine) this.form.markAsPristine({ emitEvent: false });
     this.form.updateValueAndValidity({ emitEvent: false });
   }
 

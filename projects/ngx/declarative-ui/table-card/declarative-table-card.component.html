@@ -96,11 +96,11 @@
   [config]="createFormConfig()"
   [fieldErrors]="createFormState().fieldErrors ?? {}"
   [fields]="resolvedCreateFields()"
-  [initialValues]="{}"
+  [initialValues]="createInitialValues()"
   [open]="createDialogOpen()"
+  [pending]="createFormState().pending ?? false"
   (cancelled)="closeCreateDialog()"
   (fieldChange)="onCreateFieldChange($event)"
-  (fieldsUpdated)="onCreateFieldsUpdated($event)"
   (submitted)="onCreateSubmit($event)"
 />
 
@@ -112,11 +112,11 @@
   [config]="editFormConfig()"
   [fieldErrors]="editFormState().fieldErrors ?? {}"
   [fields]="resolvedEditFields()"
-  [initialValues]="{}"
+  [initialValues]="editInitialValues()"
   [open]="editDialogOpen()"
+  [pending]="editFormState().pending ?? false"
   (cancelled)="closeEditDialog()"
   (fieldChange)="onEditFieldChange($event)"
-  (fieldsUpdated)="onEditFieldsUpdated($event)"
   (submitted)="onEditSubmit($event)"
 />
 

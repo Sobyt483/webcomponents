@@ -8,6 +8,8 @@ export interface FormFieldDefinition {
   required?: boolean;
   /** Fixed list of options rendered as a select/dropdown. */
   values?: string[];
+  /** Keeps a dependent select visible while its options are unavailable. */
+  optionsState?: 'pending' | 'ready' | 'blocked' | 'error';
   /** When `true`, the field is disabled (not interactive). */
   disabled?: boolean;
   /** UI5 input type rendered by `mfp-declarative-form`. */
@@ -64,6 +66,8 @@ export interface FormFieldChangeEvent {
    * but do NOT trigger the dependent re-resolve hook.
    */
   source?: 'seed' | 'user';
+  /** Flat values of all controls after this change, including disabled controls. */
+  formValues?: Readonly<Record<string, unknown>>;
 }
 
 /** Map of field names to their current validation error messages (`null` = no error). */

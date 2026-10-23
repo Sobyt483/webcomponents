@@ -28,11 +28,15 @@
         @if (getError(field.name); as error) {
           <div class="collection-error" role="alert">{{ error }}</div>
         }
-      } @else if (field.values?.length) {
+      } @else if (field.optionsState || field.values?.length) {
         <ui5-select
           class="input"
+          [attr.aria-busy]="field.optionsState === 'pending' ? 'true' : null"
           [attr.data-testid]="'generic-form-field-' + field.name"
-          [disabled]="field.disabled"
+          [disabled]="
+            field.disabled ||
+            (field.optionsState !== undefined && field.optionsState !== 'ready')
+          "
           [id]="'generic-form-field-input-' + field.name"
           [required]="field.required"
           [value]="control.value"
@@ -43,7 +47,7 @@
           @if (getError(field.name); as error) {
             <div slot="valueStateMessage">{{ error }}</div>
           }
-          @for (value of [''].concat(field.values ?? []); track value) {
+          @for (value of selectOptions(field, control.value); track value) {
             <ui5-option
               [attr.data-testid]="
                 'generic-form-field-' +
@@ -57,6 +61,12 @@
             >
           }
         </ui5-select>
+        @if (field.optionsState === 'pending') {
+          <div class="field-hint" role="status">Loading options</div>
+        }
+        @if (field.optionsState === 'error') {
+          <div class="field-hint" role="alert">Unable to load options</div>
+        }
       } @else if (field.inputType === 'Switch') {
         <ui5-switch
           class="switch"

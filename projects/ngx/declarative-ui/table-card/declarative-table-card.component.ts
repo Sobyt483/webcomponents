@@ -11,6 +11,7 @@ import { getResourceValueByJsonPath } from '../table/utils/resource-field-by-pat
 import { FilterTabs } from './filter-tabs/filter-tabs.component';
 import {
   FieldFilterDefinition,
+  ResourceFormPatch,
   TableCardConfig,
   TableCardFormState,
 } from './models/configs';
@@ -103,6 +104,8 @@ export class DeclarativeTableCard<R extends GenericResource> {
     value: Record<string, unknown>;
   }>();
   readonly deleteSubmit = output<R>();
+  readonly createDialogClosed = output<void>();
+  readonly editDialogClosed = output<void>();
   readonly filterTabChanged = output<FieldFilterDefinition | undefined>();
 
   protected searchControl = new FormControl('');
@@ -112,14 +115,13 @@ export class DeclarativeTableCard<R extends GenericResource> {
   protected deleteDialogOpen = signal(false);
 
   protected pendingResource = signal<R | null>(null);
-  /**
-   * Fields passed as the initial `[fields]` input to the create dialog. The
-   * card owns the state now: the dialog surfaces `fieldsUpdated` from the
-   * `onFieldChange` hook, which the card writes back here so the dialog sees
-   * the new fields on the next render.
-   */
+  /** Current fields for each dialog, updated by name during option refreshes. */
   protected resolvedCreateFields = signal<FormFieldDefinition[]>([]);
   protected resolvedEditFields = signal<FormFieldDefinition[]>([]);
+  protected createInitialValues = signal<Record<string, unknown>>({});
+  protected editInitialValues = signal<Record<string, unknown>>({});
+  private createOpenGeneration = 0;
+  private editOpenGeneration = 0;
 
   private readonly createDialog = viewChild<ResourceFormDialog>('createDialog');
   private readonly editDialog = viewChild<ResourceFormDialog>('editDialog');
@@ -261,24 +263,31 @@ export class DeclarativeTableCard<R extends GenericResource> {
   }
 
   async openCreateDialog(): Promise<void> {
-    this.resolvedCreateFields.set(
-      await this.resolveFormFields(this.createFormConfig()?.fields),
+    const generation = ++this.createOpenGeneration;
+    const fields = await this.resolveFormFields(
+      this.createFormConfig()?.fields,
     );
+    if (generation !== this.createOpenGeneration) return;
+    this.createInitialValues.set({});
+    this.resolvedCreateFields.set(fields);
     this.createDialogOpen.set(true);
   }
 
   private async openEditDialog(resource: R): Promise<void> {
+    const generation = ++this.editOpenGeneration;
     const config = this.config()?.editResourceFormConfig?.(resource);
     const fields = await this.resolveFormFields(config?.fields);
-    if (this.pendingResource() !== resource) {
+    if (
+      generation !== this.editOpenGeneration ||
+      this.pendingResource() !== resource
+    ) {
       return;
     }
 
+    const initialValues = this.buildInitialValues(fields, resource);
+    this.editInitialValues.set(initialValues);
     this.resolvedEditFields.set(fields);
     this.editDialogOpen.set(true);
-    const initialValues = this.buildInitialValues(fields, resource);
-
-    this.editDialog()?.patchForm(initialValues, { emitEvent: false });
   }
 
   private async resolveFormFields(
@@ -292,11 +301,43 @@ export class DeclarativeTableCard<R extends GenericResource> {
   }
 
   closeCreateDialog(): void {
+    this.createOpenGeneration += 1;
     this.createDialogOpen.set(false);
+    this.createDialogClosed.emit();
   }
 
   closeEditDialog(): void {
+    this.editOpenGeneration += 1;
     this.editDialogOpen.set(false);
+    this.editDialogClosed.emit();
+  }
+
+  applyCreateFormPatch(patch: ResourceFormPatch): void {
+    if (!this.createDialogOpen()) return;
+    this.applyFormPatch(this.resolvedCreateFields, this.createDialog(), patch);
+  }
+
+  applyEditFormPatch(patch: ResourceFormPatch): void {
+    if (!this.editDialogOpen()) return;
+    this.applyFormPatch(this.resolvedEditFields, this.editDialog(), patch);
+  }
+
+  private applyFormPatch(
+    fields: typeof this.resolvedCreateFields,
+    dialog: ResourceFormDialog | undefined,
+    patch: ResourceFormPatch,
+  ): void {
+    if (patch.values) {
+      dialog?.patchForm(patch.values, { emitEvent: false, markAsDirty: true });
+    }
+    if (patch.fieldUpdates) {
+      fields.update((current) =>
+        current.map((field) => {
+          const update = patch.fieldUpdates?.[field.name];
+          return update ? { ...field, ...update } : field;
+        }),
+      );
+    }
   }
 
   closeDeleteDialog(): void {
@@ -311,30 +352,6 @@ export class DeclarativeTableCard<R extends GenericResource> {
     const resource = this.pendingResource();
     if (resource) {
       this.editFieldChange.emit({ resource, formChangeEvent: event });
-    }
-  }
-
-  onCreateFieldsUpdated(payload: {
-    fields: FormFieldDefinition[];
-    initialValues?: Record<string, unknown>;
-  }): void {
-    this.resolvedCreateFields.set(payload.fields);
-    if (payload.initialValues !== undefined) {
-      this.createDialog()?.patchForm(payload.initialValues, {
-        emitEvent: false,
-      });
-    }
-  }
-
-  onEditFieldsUpdated(payload: {
-    fields: FormFieldDefinition[];
-    initialValues?: Record<string, unknown>;
-  }): void {
-    this.resolvedEditFields.set(payload.fields);
-    if (payload.initialValues !== undefined) {
-      this.editDialog()?.patchForm(payload.initialValues, {
-        emitEvent: false,
-      });
     }
   }
 
