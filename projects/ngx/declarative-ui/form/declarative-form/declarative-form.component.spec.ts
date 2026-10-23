@@ -137,6 +137,20 @@ describe('DeclarativeForm', () => {
       expect(fieldElement?.tagName.toLowerCase()).toBe('ui5-select');
     });
 
+    it('keeps an empty dynamic options field as an enabled select', () => {
+      fixture.componentRef.setInput('fields', [
+        { name: 'spec.secret', label: 'Secret', values: [] },
+      ]);
+      fixture.detectChanges();
+
+      const shadowRoot = fixture.nativeElement.shadowRoot as ShadowRoot;
+      const select = shadowRoot.querySelector(
+        '[data-testid="generic-form-field-spec.secret"]',
+      );
+      expect(select?.tagName.toLowerCase()).toBe('ui5-select');
+      expect((select as HTMLSelectElement | null)?.disabled).toBe(false);
+    });
+
     it('should render an input when field.values are not provided', () => {
       fixture.componentRef.setInput('fields', [
         {

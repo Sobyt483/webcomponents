@@ -6,10 +6,8 @@ export interface FormFieldDefinition {
   label: string;
   /** When `true`, passes the `required` attribute to the UI5 input — shows a visual required indicator. Validation itself is the host's responsibility via `FormFieldErrors`. */
   required?: boolean;
-  /** Fixed list of options rendered as a select/dropdown. */
+  /** Options rendered as a select; an empty array keeps the select visible. */
   values?: string[];
-  /** Keeps a dependent select visible while its options are unavailable. */
-  optionsState?: 'pending' | 'ready' | 'blocked' | 'error';
   /** When `true`, the field is disabled (not interactive). */
   disabled?: boolean;
   /** UI5 input type rendered by `mfp-declarative-form`. */

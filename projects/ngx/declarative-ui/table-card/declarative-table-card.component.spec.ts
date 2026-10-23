@@ -934,14 +934,13 @@ describe('DeclarativeTableCard', () => {
       component.applyCreateFormPatch({
         values: { 'metadata.namespace': '' },
         fieldUpdates: {
-          'metadata.namespace': { values: ['staging'], optionsState: 'ready' },
+          'metadata.namespace': { values: ['staging'] },
         },
       });
 
       expect(component['resolvedCreateFields']()[0]).toEqual(UPDATED_FIELDS[0]);
       expect(component['resolvedCreateFields']()[1]).toMatchObject({
         values: ['staging'],
-        optionsState: 'ready',
       });
       expect(spy).toHaveBeenCalledWith(
         { 'metadata.namespace': '' },
@@ -960,14 +959,13 @@ describe('DeclarativeTableCard', () => {
       component.applyEditFormPatch({
         values: { 'metadata.namespace': '' },
         fieldUpdates: {
-          'metadata.namespace': { values: ['staging'], optionsState: 'ready' },
+          'metadata.namespace': { values: ['staging'] },
         },
       });
 
       expect(component['resolvedEditFields']()[0]).toEqual(UPDATED_FIELDS[0]);
       expect(component['resolvedEditFields']()[1]).toMatchObject({
         values: ['staging'],
-        optionsState: 'ready',
       });
       expect(spy).toHaveBeenCalledWith(
         { 'metadata.namespace': '' },

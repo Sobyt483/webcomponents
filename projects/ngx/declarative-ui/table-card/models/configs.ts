@@ -28,10 +28,7 @@ export interface TableCardFormState {
 
 export interface ResourceFormPatch {
   values?: Record<string, unknown>;
-  fieldUpdates?: Record<
-    string,
-    Partial<Pick<FormFieldDefinition, 'values' | 'optionsState'>>
-  >;
+  fieldUpdates?: Record<string, Partial<Pick<FormFieldDefinition, 'values'>>>;
 }
 
 /** Configuration for the delete-confirmation dialog. */
