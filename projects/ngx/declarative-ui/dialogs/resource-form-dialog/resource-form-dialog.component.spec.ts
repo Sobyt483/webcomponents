@@ -32,10 +32,6 @@ describe('ResourceFormDialog', () => {
     expect(await axe(fixture.nativeElement)).toHaveNoViolations();
   });
 
-  // ---------------------------------------------------------------------------
-  // onFieldChange hook — owned by the dialog
-  // ---------------------------------------------------------------------------
-
   describe('onFieldChange hook', () => {
     const FIELDS: FormFieldDefinition[] = [
       { name: 'metadata.name', label: 'Name' },
@@ -229,10 +225,6 @@ describe('ResourceFormDialog', () => {
       ]);
     });
 
-    // -------------------------------------------------------------------------
-    // source filtering — seed echoes must not trigger the hook
-    // -------------------------------------------------------------------------
-
     it('does NOT call onFieldChange when the event has source: "seed"', async () => {
       const onFieldChange = vi.fn().mockResolvedValue(undefined);
       const f = makeDialog({ fields: FIELDS, onFieldChange });
@@ -323,22 +315,17 @@ describe('ResourceFormDialog', () => {
       const updates: unknown[] = [];
       f.componentInstance.fieldsUpdated.subscribe((p) => updates.push(p));
 
-      // Start a resolver under the first session.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p1 = (f.componentInstance as any).handleFieldChange({
         fieldProperty: 'metadata.namespace',
         value: 'session-1',
       });
 
-      // Close and re-open — the race guard must clear so a NEW event for the
-      // SAME key under the new session wins even if the first resolver
-      // settles later.
       f.componentRef.setInput('open', false);
       f.detectChanges();
       f.componentRef.setInput('open', true);
       f.detectChanges();
 
-      // Second event, now under the fresh session.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p2 = (f.componentInstance as any).handleFieldChange({
         fieldProperty: 'metadata.namespace',
@@ -354,7 +341,6 @@ describe('ResourceFormDialog', () => {
       resolveFirst({ fields: FIELDS });
       await p1;
 
-      // Session 2's update is present.
       expect(
         updates.some(
           (u) =>
@@ -363,10 +349,6 @@ describe('ResourceFormDialog', () => {
       ).toBe(true);
     });
   });
-
-  // ---------------------------------------------------------------------------
-  // patchForm — delegate to inner form
-  // ---------------------------------------------------------------------------
 
   describe('patchForm delegate', () => {
     it('delegates patchForm(values) to the inner form with the same args', async () => {
@@ -411,7 +393,6 @@ describe('ResourceFormDialog', () => {
       f.detectChanges();
       await f.whenStable();
 
-      // Silent — no fieldChange from the delegate.
       expect(emitted).toEqual([]);
     });
 
@@ -463,10 +444,6 @@ describe('ResourceFormDialog', () => {
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // reset-on-close — discard lingering user-typed state so the next open starts clean
-  // ---------------------------------------------------------------------------
-
   describe('reset-on-close', () => {
     it('resets the inner form when `open` transitions true → false', async () => {
       const f = TestBed.createComponent(ResourceFormDialog);
@@ -476,7 +453,6 @@ describe('ResourceFormDialog', () => {
       ]);
       f.detectChanges();
 
-      // Patch a value as if the user had typed it.
       f.componentInstance.patchForm(
         { 'metadata.name': 'user-typed' },
         { emitEvent: false },
@@ -487,7 +463,6 @@ describe('ResourceFormDialog', () => {
       const innerForm = (f.componentInstance as any).form();
       expect(innerForm.form.controls['metadata.name']?.value).toBe('user-typed');
 
-      // Close the dialog.
       f.componentRef.setInput('open', false);
       f.detectChanges();
       await f.whenStable();
@@ -507,7 +482,6 @@ describe('ResourceFormDialog', () => {
       f.componentRef.setInput('open', true);
       f.detectChanges();
 
-      // Seed after open.
       f.componentInstance.patchForm(
         { 'metadata.name': 'kept' },
         { emitEvent: false },

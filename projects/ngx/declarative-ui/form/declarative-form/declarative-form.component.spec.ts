@@ -937,14 +937,12 @@ describe('DeclarativeForm', () => {
       const localComponent = localFixture.componentInstance;
 
       localFixture.componentRef.setInput('fields', testFields);
-      // Trigger the first initialValues emission (default is {}).
       localFixture.componentRef.setInput('initialValues', {});
       localFixture.detectChanges();
 
       const emitted: FormFieldChangeEvent[] = [];
       localComponent.fieldChange.subscribe((event) => emitted.push(event));
 
-      // Push a NEW fields array identity without touching initialValues.
       localFixture.componentRef.setInput('fields', [...testFields]);
       localFixture.detectChanges();
 
@@ -1023,7 +1021,6 @@ describe('DeclarativeForm', () => {
       localComponent.fieldChange.subscribe((event) => emitted.push(event));
 
       localFixture.componentRef.setInput('fields', dependencyFields);
-      // Initial input push — emits once for each validation field.
       localFixture.componentRef.setInput('initialValues', {});
       localFixture.detectChanges();
 
@@ -1068,7 +1065,6 @@ describe('DeclarativeForm', () => {
       localFixture.detectChanges();
       const firstCount = emitted.length;
 
-      // Second input push, new identity → re-emits.
       localFixture.componentRef.setInput('initialValues', {
         'metadata.name': 'second',
       });
@@ -1109,7 +1105,6 @@ describe('DeclarativeForm', () => {
       expect(localComponent.form.controls['metadata.namespace'].value).toBe(
         'ns-a',
       );
-      // One emit per validation field.
       expect(emitted).toEqual([
         { fieldProperty: 'metadata.name', value: 'via-patch', source: 'seed' },
         { fieldProperty: 'metadata.namespace', value: 'ns-a', source: 'seed' },
@@ -1181,7 +1176,6 @@ describe('DeclarativeForm', () => {
         { emitEvent: false },
       );
 
-      // No emit at all — the silent write seeded both validation fields.
       expect(emitted).toEqual([]);
     });
 

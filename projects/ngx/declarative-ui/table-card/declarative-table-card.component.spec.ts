@@ -22,10 +22,6 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { axe } from 'vitest-axe';
 
-// --------------------------------------------------------------------------
-// Helpers
-// --------------------------------------------------------------------------
-
 type TableCardCreateConfig = ResourceFormConfig;
 type TableCardReadConfig = TableConfig;
 type TableCardEditConfig = ResourceFormConfig & {
@@ -159,10 +155,6 @@ function setup(
   return { fixture, component };
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 /** Query inside a ResourceFormDialog child's shadow root by test-id prefix. */
 function dialogRoot(
   fixture: ComponentFixture<DeclarativeTableCard<GenericResource>>,
@@ -195,18 +187,10 @@ describe('DeclarativeTableCard', () => {
     vi.useRealTimers();
   });
 
-  // -------------------------------------------------------------------------
-  // 1. Component creation
-  // -------------------------------------------------------------------------
-
   it('should create', () => {
     const { component } = setup();
     expect(component).toBeTruthy();
   });
-
-  // -------------------------------------------------------------------------
-  // 2. DOM: mfp-declarative-table rendered
-  // -------------------------------------------------------------------------
 
   describe('DOM: mfp-declarative-table', () => {
     it('renders mfp-declarative-table in the host element', () => {
@@ -245,9 +229,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 3. header input
-  // -------------------------------------------------------------------------
 
   describe('header input', () => {
     it('renders the header title when header is provided', () => {
@@ -260,9 +241,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 4. headerTooltip input
-  // -------------------------------------------------------------------------
 
   describe('headerTooltip input', () => {
     it('renders info icon when headerTooltip is provided', () => {
@@ -285,9 +263,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 5. Search behaviour
-  // -------------------------------------------------------------------------
 
   describe('search', () => {
     const setupSearch = (searchConfig: TableCardConfig['searchConfig']) => {
@@ -413,9 +388,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 5.b searchConfig one-shot seeds (initialSearch / initialFilter)
-  // -------------------------------------------------------------------------
 
   /**
    * Small fixture builder — the shared `setup()` helper doesn't accept a
@@ -659,9 +631,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 6. Create button visibility
-  // -------------------------------------------------------------------------
 
   describe('create button', () => {
     it('create button is absent when createConfig is not provided', () => {
@@ -679,9 +648,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 7. effectiveColumns() computed
-  // -------------------------------------------------------------------------
 
   describe('effectiveColumns()', () => {
     it('returns readConfig.fields unchanged', () => {
@@ -721,16 +687,6 @@ describe('DeclarativeTableCard', () => {
       expect(cols).toHaveLength(COLUMNS.length);
     });
   });
-
-  // -------------------------------------------------------------------------
-  // 8. editInitialValue removed — edit seeding now goes through the dialog's
-  //    patchForm({ emitEvent: false }) during `openEditDialog`. Covered by
-  //    the `openEditDialog seeds via patchForm` tests below.
-  // -------------------------------------------------------------------------
-
-  // -------------------------------------------------------------------------
-  // 9. onButtonClick()
-  // -------------------------------------------------------------------------
 
   describe('onButtonClick()', () => {
     it('intercepts action="update": sets pendingResource and opens editDialogOpen', async () => {
@@ -801,9 +757,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 9.b openCreateDialog() — lazy field resolution
-  // -------------------------------------------------------------------------
 
   describe('openCreateDialog()', () => {
     it('resolves an array fields config and opens the dialog', async () => {
@@ -840,9 +793,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 9.c openEditDialog() — concurrency / stale-resolver guard
-  // -------------------------------------------------------------------------
 
   describe('openEditDialog() concurrency', () => {
     /** A promise plus its resolver, so the test controls when it settles. */
@@ -950,9 +900,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 9.d fieldsUpdated write-back from the dialog — via patchForm delegate
-  // -------------------------------------------------------------------------
 
   describe('fieldsUpdated write-back', () => {
     const UPDATED_FIELDS: FormFieldDefinition[] = [
@@ -987,7 +934,6 @@ describe('DeclarativeTableCard', () => {
 
     it('onCreateFieldsUpdated writes fields and calls dialog.patchForm({emitEvent:false}) for initialValues', () => {
       const { fixture, component } = setup({ createConfig: CREATE_CONFIG });
-      // Open the create dialog so the viewChild is populated.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (component as any).createDialogOpen.set(true);
       fixture.detectChanges();
@@ -1068,7 +1014,6 @@ describe('DeclarativeTableCard', () => {
       // not once per instance.
       const { fixture, component } = setup({ editConfig: EDIT_CONFIG });
 
-      // First open.
       component.onButtonClick(makeEvent('update', RESOURCES[0]));
       await Promise.resolve();
       fixture.detectChanges();
@@ -1078,12 +1023,10 @@ describe('DeclarativeTableCard', () => {
       let dialog = dialogByPrefix(fixture, 'generic-table-card-edit');
       expect(dialog).not.toBeNull();
 
-      // Form state reflects the first resource.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let form = (dialog as any).form();
       expect(form.form.controls['metadata.name']?.value).toBe('pod-alpha');
 
-      // Close and re-open with a different resource.
       component.closeEditDialog();
       fixture.detectChanges();
 
@@ -1208,9 +1151,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 11. close methods
-  // -------------------------------------------------------------------------
 
   describe('close methods', () => {
     it('closeCreateDialog() closes the create dialog', () => {
@@ -1247,9 +1187,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 12. runtime form state
-  // -------------------------------------------------------------------------
 
   describe('runtime form state', () => {
     it('disables the create submit button when fieldErrors has errors', () => {
@@ -1325,9 +1262,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 14. Pass-through outputs
-  // -------------------------------------------------------------------------
 
   describe('pass-through outputs', () => {
     it('exposes tableRowClicked output', () => {
@@ -1352,9 +1286,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 15. readConfig pagination pass-through
-  // -------------------------------------------------------------------------
 
   describe('readConfig pagination', () => {
     it('effectiveColumns() uses fields from readConfig', () => {
@@ -1375,9 +1306,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 16. TableConfig: loadMode / height / loadMoreButtonText pass-through
-  // -------------------------------------------------------------------------
 
   describe('tableConfig passthrough: loadMode, height, loadMoreButtonText', () => {
     it('exposes loadMode via tableConfig signal', () => {
@@ -1423,9 +1351,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 16b. permissions input threading
-  // -------------------------------------------------------------------------
 
   describe('permissions input threading', () => {
     it('accepts a permissions map and exposes it via the permissions() signal', () => {
@@ -1481,9 +1406,6 @@ describe('DeclarativeTableCard', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // 17. data-testid attributes
-  // -------------------------------------------------------------------------
 
   describe('data-testid attributes', () => {
     it('root card div has data-testid="generic-table-card"', () => {
