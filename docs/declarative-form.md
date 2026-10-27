@@ -325,6 +325,10 @@ const initialValues = {
 
 Alongside `source`, every emit carries `formValues` — the flat value of **every** control after the change (keyed by exact `field.name`, disabled controls included). Dependent-field resolvers can read sibling values without a separate `formValueChange` subscription.
 
+Updating `fields` alone (including select options) does not emit `fieldChange`. New controls are also added silently; a subsequent `initialValues` identity change emits seeds for the current validation fields.
+
+`formValues` is a snapshot attached to the field event, including on blur and collection changes. `formValueChange` is a separate output and uses `form.value`, which excludes controls disabled through the Angular forms API. Field events use `getRawValue()`, which includes them. A field definition's `disabled` flag currently disables the rendered UI5 input; it does not disable the Angular control.
+
 Hosts that run validation on every emit can treat `'seed'` the same as `'user'`. Hosts that drive dependent fields (where a parent change should clear or re-resolve dependents) typically gate on `source === 'user'` and ignore seeds — otherwise the dialog's own prefill on edit-open would be interpreted as the user editing the parent and would wipe prefilled dependents.
 
 The input binding is the **emit** path; `patchForm({ emitEvent: false })` is the **silent** path.

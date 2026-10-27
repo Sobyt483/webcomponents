@@ -302,12 +302,14 @@ export class DeclarativeTableCard<R extends GenericResource> {
 
   closeCreateDialog(): void {
     this.createOpenGeneration += 1;
+    if (!this.createDialogOpen()) return;
     this.createDialogOpen.set(false);
     this.createDialogClosed.emit();
   }
 
   closeEditDialog(): void {
     this.editOpenGeneration += 1;
+    if (!this.editDialogOpen()) return;
     this.editDialogOpen.set(false);
     this.editDialogClosed.emit();
   }

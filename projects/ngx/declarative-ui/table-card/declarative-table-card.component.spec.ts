@@ -893,6 +893,42 @@ describe('DeclarativeTableCard', () => {
   });
 
   describe('runtime form patches', () => {
+    it('does not echo field changes when the host patches dependent options', async () => {
+      vi.useRealTimers();
+      const fields: FormFieldDefinition[] = [
+        { name: 'metadata.name', label: 'Name', validation: 'onChange' },
+        {
+          name: 'metadata.namespace',
+          label: 'Namespace',
+          validation: 'onBlur',
+          values: ['team-a'],
+        },
+      ];
+      const { fixture, component } = setup({ createConfig: { fields } });
+      await component.openCreateDialog();
+      await fixture.whenStable();
+      const emitted: FormFieldChangeEvent[] = [];
+      component.createFieldChange.subscribe((event) => {
+        emitted.push(event);
+        if (emitted.length > 1) return;
+        component.applyCreateFormPatch({
+          values: { 'metadata.namespace': '' },
+          fieldUpdates: { 'metadata.namespace': { values: ['team-b'] } },
+        });
+      });
+      const event: FormFieldChangeEvent = {
+        fieldProperty: 'metadata.name',
+        value: 'new-name',
+        source: 'user',
+      };
+
+      component.onCreateFieldChange(event);
+      await fixture.whenStable();
+
+      expect(emitted).toEqual([event]);
+      expect(component['resolvedCreateFields']()[1].values).toEqual(['team-b']);
+    });
+
     const UPDATED_FIELDS: FormFieldDefinition[] = [
       { name: 'metadata.name', label: 'Name' },
       {
@@ -1114,6 +1150,89 @@ describe('DeclarativeTableCard', () => {
   });
 
   describe('close methods', () => {
+    it.each(['create', 'edit'] as const)(
+      'emits %sDialogClosed once when cancellation follows a host close',
+      async (kind) => {
+        vi.useRealTimers();
+        const { fixture, component } = setup({
+          createConfig: CREATE_CONFIG,
+          editConfig: EDIT_CONFIG,
+        });
+        const closed = vi.fn();
+        const close = () => {
+          if (kind === 'create') {
+            component.closeCreateDialog();
+          } else {
+            component.closeEditDialog();
+          }
+        };
+        const output =
+          kind === 'create'
+            ? component.createDialogClosed
+            : component.editDialogClosed;
+        output.subscribe(closed);
+
+        if (kind === 'create') {
+          await component.openCreateDialog();
+        } else {
+          component.onButtonClick(makeEvent('update', RESOURCES[0]));
+        }
+        await fixture.whenStable();
+
+        close();
+        await fixture.whenStable();
+        const dialog = fixture.debugElement
+          .queryAll(By.directive(ResourceFormDialog))
+          .map((element) => element.componentInstance as ResourceFormDialog)
+          .find(
+            (candidate) =>
+              candidate.dataTestidPrefix() === `generic-table-card-${kind}`,
+          );
+        if (!dialog) throw new Error(`Missing ${kind} dialog`);
+        // Simulate the cancellation output caused by UI5's before-close event.
+        dialog.cancelled.emit();
+        close();
+
+        expect(closed).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it.each(['create', 'edit'] as const)(
+      'cancels a pending %s open without emitting a close event',
+      async (kind) => {
+        vi.useRealTimers();
+        let resolveFields: (fields: FormFieldDefinition[]) => void = () =>
+          undefined;
+        const fields = new Promise<FormFieldDefinition[]>((resolve) => {
+          resolveFields = resolve;
+        });
+        const config = { fields: () => fields };
+        const { fixture, component } = setup({
+          createConfig: config,
+          editConfig: config,
+        });
+        const closed = vi.fn();
+        if (kind === 'create') {
+          component.createDialogClosed.subscribe(closed);
+          void component.openCreateDialog();
+          component.closeCreateDialog();
+        } else {
+          component.editDialogClosed.subscribe(closed);
+          component.onButtonClick(makeEvent('update', RESOURCES[0]));
+          component.closeEditDialog();
+        }
+        resolveFields(FORM_FIELDS);
+        await fixture.whenStable();
+
+        expect(
+          component[
+            kind === 'create' ? 'createDialogOpen' : 'editDialogOpen'
+          ](),
+        ).toBe(false);
+        expect(closed).not.toHaveBeenCalled();
+      },
+    );
+
     it('closeCreateDialog() closes the create dialog', () => {
       const { component } = setup({ createConfig: CREATE_CONFIG });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

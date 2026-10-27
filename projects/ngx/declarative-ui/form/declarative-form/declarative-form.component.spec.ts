@@ -881,6 +881,50 @@ describe('DeclarativeForm', () => {
     // is the "silent" path for hosts that need to seed without echoing a
     // user-change-shaped event (edit-open self-clear prevention).
 
+    it('does not re-emit seeds when field options change', async () => {
+      const emitted: FormFieldChangeEvent[] = [];
+      component.fieldChange.subscribe((event) => emitted.push(event));
+      component.patchForm(
+        { 'metadata.name': 'edited-name' },
+        { emitEvent: false, markAsDirty: true },
+      );
+      const nameControl = component.form.controls['metadata.name'];
+
+      fixture.componentRef.setInput(
+        'fields',
+        testFields.map((field) =>
+          field.name === 'metadata.namespace'
+            ? { ...field, values: ['team-a'] }
+            : field,
+        ),
+      );
+      await fixture.whenStable();
+
+      expect(emitted).toEqual([]);
+      expect(component.form.controls['metadata.name']).toBe(nameControl);
+      expect(nameControl.value).toBe('edited-name');
+      expect(nameControl.dirty).toBe(true);
+
+      fixture.componentRef.setInput('initialValues', {
+        'metadata.name': 'next-resource',
+        'metadata.namespace': 'team-a',
+      });
+      await fixture.whenStable();
+
+      expect(emitted).toMatchObject([
+        {
+          fieldProperty: 'metadata.name',
+          value: 'next-resource',
+          source: 'seed',
+        },
+        {
+          fieldProperty: 'metadata.namespace',
+          value: 'team-a',
+          source: 'seed',
+        },
+      ]);
+    });
+
     it('emits once for each validation field with the resulting control value (seeded or empty)', () => {
       const localFixture = TestBed.createComponent(DeclarativeForm);
       const localComponent = localFixture.componentInstance;
@@ -951,7 +995,7 @@ describe('DeclarativeForm', () => {
       );
     });
 
-    it('seeds validation when a new field appears after initial values', () => {
+    it('adds new controls silently until initialValues changes', async () => {
       const localFixture = TestBed.createComponent(DeclarativeForm);
       const localComponent = localFixture.componentInstance;
 
@@ -966,14 +1010,22 @@ describe('DeclarativeForm', () => {
         ...testFields,
         { name: 'spec.late', label: 'Late', validation: 'onChange' },
       ]);
-      localFixture.detectChanges();
+      await localFixture.whenStable();
+
+      expect(localComponent.form.controls['spec.late']?.value).toBe('');
+      expect(emitted).toEqual([]);
+
+      localFixture.componentRef.setInput('initialValues', {
+        'spec.late': 'prefilled',
+      });
+      await localFixture.whenStable();
 
       expect(emitted).toContainEqual(
         expect.objectContaining({
           fieldProperty: 'spec.late',
-          value: '',
+          value: 'prefilled',
           source: 'seed',
-          formValues: expect.objectContaining({ 'spec.late': '' }),
+          formValues: expect.objectContaining({ 'spec.late': 'prefilled' }),
         }),
       );
     });

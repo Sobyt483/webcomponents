@@ -58,10 +58,6 @@ export interface FormFieldChangeEvent {
    *
    * Absence (undefined) is treated as `'user'` for backward compatibility
    * with external consumers that construct `FormFieldChangeEvent` manually.
-   *
-   * The dialog's `config.onFieldChange` hook is invoked ONLY for `'user'`
-   * emits — seed emits are observable on the public `fieldChange` output
-   * but do NOT trigger the dependent re-resolve hook.
    */
   source?: 'seed' | 'user';
   /** Flat values of all controls after this change, including disabled controls. */

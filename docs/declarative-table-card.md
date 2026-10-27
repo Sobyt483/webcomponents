@@ -216,6 +216,8 @@ export class MyComponent {
 
 Submit events do not close dialogs automatically. Close the dialog after successful validation, save, or delete.
 
+`createDialogClosed` and `editDialogClosed` fire once per open-to-closed transition. Calling a close method on an already closed dialog emits nothing, but still cancels any pending asynchronous open.
+
 ---
 
 ## Test IDs

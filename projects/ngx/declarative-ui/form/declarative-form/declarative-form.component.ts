@@ -92,7 +92,6 @@ export class DeclarativeForm<T extends GenericResource> {
     });
 
     effect(() => {
-      this.fields();
       this.initialValues();
       untracked(() => {
         this.seedValidationFields();
